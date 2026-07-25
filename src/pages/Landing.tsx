@@ -77,10 +77,10 @@ const Landing = () => {
             {/* Left column — text */}
             <div className="relative z-[3] flex-1 min-w-0 max-w-[540px]">
               <h1 className="text-[clamp(2rem,4vw,3.2rem)] font-[500] leading-[1.08] tracking-[-0.04em] text-foreground max-w-[540px]">
-                Bug tracking for teams that ship fast
+                Ace your IIT Madras exams with past papers
               </h1>
               <p className="mt-6 text-base leading-relaxed text-muted-foreground max-w-[420px]">
-                Purpose-built for engineering teams. QUIZZO, track, and resolve issues without slowing down.
+                Practice with real past-year questions, track your accuracy, and walk into every exam knowing exactly where you stand.
               </p>
             </div>
 
@@ -150,13 +150,13 @@ const Landing = () => {
                   </div>
                   <div className="flex-1">
                     {[
-                      { priority: "bg-destructive", id: "TRG-142", title: "w-[180px]", status: "bg-warning" },
-                      { priority: "bg-destructive", id: "TRG-139", title: "w-[220px]", status: "bg-destructive" },
-                      { priority: "bg-warning", id: "TRG-138", title: "w-[160px]", status: "bg-primary" },
-                      { priority: "bg-primary", id: "TRG-135", title: "w-[200px]", status: "bg-success" },
-                      { priority: "bg-muted-foreground/30", id: "TRG-131", title: "w-[140px]", status: "bg-primary" },
-                      { priority: "bg-warning", id: "TRG-128", title: "w-[190px]", status: "bg-warning" },
-                      { priority: "bg-primary", id: "TRG-125", title: "w-[170px]", status: "bg-success" },
+                      { priority: "bg-destructive", id: "QZ-2041", title: "w-[180px]", status: "bg-warning" },
+                      { priority: "bg-destructive", id: "QZ-2039", title: "w-[220px]", status: "bg-destructive" },
+                      { priority: "bg-warning", id: "QZ-2038", title: "w-[160px]", status: "bg-primary" },
+                      { priority: "bg-primary", id: "QZ-2036", title: "w-[200px]", status: "bg-success" },
+                      { priority: "bg-muted-foreground/30", id: "QZ-2034", title: "w-[140px]", status: "bg-primary" },
+                      { priority: "bg-warning", id: "QZ-2031", title: "w-[190px]", status: "bg-warning" },
+                      { priority: "bg-primary", id: "QZ-2029", title: "w-[170px]", status: "bg-success" },
                     ].map((row, i) => (
                       <div key={i} className={`relative flex items-center gap-3 px-4 h-9 border-b border-border transition-colors`}>
                         {i === 1 && (
@@ -195,10 +195,10 @@ const Landing = () => {
                     </div>
                     <div className="h-px bg-border" />
                     {[
-                      { label: "Status", value: "bg-warning" },
-                      { label: "Priority", value: "bg-destructive" },
-                      { label: "Assignee", value: "bg-primary" },
-                      { label: "Due", value: "bg-muted-foreground/15" },
+                      { label: "Subject", value: "bg-warning" },
+                      { label: "Term", value: "bg-destructive" },
+                      { label: "Attempts", value: "bg-primary" },
+                      { label: "Score", value: "bg-muted-foreground/15" },
                     ].map((prop) => (
                       <div key={prop.label} className="flex items-center justify-between">
                         <span className="text-[11px] text-muted-foreground">{prop.label}</span>
@@ -234,28 +234,28 @@ const Landing = () => {
       <section className="relative z-10 pt-24 pb-24 px-6 overflow-hidden">
         <div className="mx-auto max-w-[1200px] relative">
           <p className="text-[13px] uppercase tracking-[0.15em] text-muted-foreground mb-4">
-            Built for speed
+            Built for students
           </p>
           <h2 className="text-[clamp(1.8rem,3vw,2.5rem)] font-[500] tracking-[-0.03em] text-foreground max-w-[500px] leading-[1.15]">
-            Less process.<br />More progress.
+            Less guessing.<br />More scoring.
           </h2>
 
           <div className="mt-16 border border-border">
             <div className="grid grid-cols-1 md:grid-cols-3">
               {[
                 {
-                  title: "Priority triage",
-                  desc: "Four severity levels. SLA deadlines. One glance tells you what to fix next — and when you're out of time.",
+                  title: "Real exam pattern",
+                  desc: "Every paper follows the actual IIT Madras format — Quiz 1, Quiz 2, End Term. Same question types, same marks, same pressure.",
                   graphic: "bars",
                 },
                 {
-                  title: "Team workflows",
-                  desc: "Assign, reassign, comment, resolve. Every state change leaves a trail. Nothing slips through.",
+                  title: "Exam and practice modes",
+                  desc: "Timed exam mode for the real experience. Practice mode with hints and solutions when you want to learn, not just test.",
                   graphic: "flow",
                 },
                 {
-                  title: "Real-time analytics",
-                  desc: "Resolution time. Severity trends. Team velocity. Numbers that tell you something — not dashboards for dashboards' sake.",
+                  title: "Performance analytics",
+                  desc: "Score breakdown, time per question, accuracy by difficulty. Know what you got right — and exactly why you got it wrong.",
                   graphic: "chart",
                 },
               ].map((feature, i) => (
@@ -333,13 +333,13 @@ const Landing = () => {
         <div className="mx-auto max-w-[1200px] relative">
           <div className="border border-border bg-card p-10 max-w-[720px] mx-auto">
             <blockquote className="text-[20px] font-[400] leading-[1.5] tracking-[-0.01em] text-foreground">
-              "We replaced three tools with one. Mean time to resolution dropped 40% in the first month. The team actually uses it — that's the real win."
+              "I cleared Statistics I on my first attempt after two weeks on QUIZZO. The past papers are spot-on and the practice mode makes it impossible to lose track of where you're weak."
             </blockquote>
             <div className="mt-6 flex items-center gap-3">
-              <img src={testimonialAvatarAsset.url} alt="Jamie Kim" className="h-8 w-8 rounded-full object-cover" />
+              <img src={testimonialAvatarAsset.url} alt="Priya Nair" className="h-8 w-8 rounded-full object-cover" />
               <div>
-                <span className="text-[13px] font-medium text-foreground">Jamie Kim</span>
-                <span className="text-[13px] text-muted-foreground ml-2">Engineering Lead, Acme Corp</span>
+                <span className="text-[13px] font-medium text-foreground">Priya Nair</span>
+                <span className="text-[13px] text-muted-foreground ml-2">BS Data Science, Semester 4</span>
               </div>
             </div>
           </div>
@@ -353,17 +353,17 @@ const Landing = () => {
       <section className="relative z-10 pt-32 pb-40 px-6 overflow-hidden">
         <div className="mx-auto max-w-[1200px] text-center relative">
           <h2 className="text-[clamp(2rem,4vw,3.2rem)] font-[500] tracking-[-0.035em] text-foreground leading-[1.1] mx-auto max-w-[560px]">
-            Your bugs aren't going to track themselves.
+            Your next exam isn't going to prepare itself.
           </h2>
           <p className="mt-5 text-[15px] text-muted-foreground max-w-[400px] mx-auto">
-            Two minutes to set up. No credit card. No sales call.<br />Just fewer bugs, starting now.
+            Pick a subject, start a paper, and find out where you actually stand.<br />No sign-up needed to begin.
           </p>
           <div className="mt-10 flex justify-center">
             <Link to="/auth">
               <button
                 className="group relative inline-flex items-center gap-2.5 px-8 py-3.5 text-[15px] font-medium transition-all duration-200 border border-foreground/40 text-foreground hover:bg-foreground hover:text-background hover:border-foreground"
               >
-                Start tracking now
+                Start practising now
                 <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
               </button>
             </Link>

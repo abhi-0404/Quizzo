@@ -93,7 +93,7 @@ export default function Auth() {
             <StackedLogo size={16} />
             <span className="text-[14px] font-bold text-foreground tracking-[0.08em] uppercase">QUIZZO</span>
           </Link>
-          <p className="text-[13px] text-muted-foreground">Track, prioritize, and resolve bugs</p>
+          <p className="text-[13px] text-muted-foreground">Practice past papers. Track your progress.</p>
         </div>
 
         {/* Google */}
