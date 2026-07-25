@@ -1,0 +1,276 @@
+@import url('https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Canvas is gray-50 so that white surfaces read as raised without shadows. */
+    --background: 210 20% 98%;
+    --foreground: 221 39% 11%;
+
+    /* Surfaces (cards, sidebars, modals, containers) are pure white. */
+    --card: 0 0% 100%;
+    --card-foreground: 221 39% 11%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 221 39% 11%;
+
+    --primary: 234 55% 58%;
+    --primary-foreground: 0 0% 100%;
+
+    /* gray-100 — interactive fills: hover, active tabs, segmented controls. */
+    --secondary: 220 14% 96%;
+    --secondary-foreground: 221 39% 11%;
+
+    --muted: 220 14% 96%;
+    --muted-foreground: 220 9% 46%;
+
+    --accent: 220 14% 96%;
+    --accent-foreground: 221 39% 11%;
+
+    --destructive: 345 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+
+    --success: 142 70% 40%;
+    --success-foreground: 0 0% 100%;
+
+    --warning: 38 92% 50%;
+    --warning-foreground: 0 0% 100%;
+
+    --info: 199 89% 48%;
+    --info-foreground: 0 0% 100%;
+
+    /* Structure carries entirely on borders — gray-200 for dividers, gray-300 for inputs. */
+    --border: 220 13% 91%;
+    --input: 216 12% 84%;
+    --ring: 234 55% 58%;
+
+    --radius: 0.375rem;
+
+    /* Sidebar is a white surface against the gray-50 canvas. */
+    --sidebar-background: 0 0% 100%;
+    --sidebar-foreground: 215 14% 34%;
+    --sidebar-primary: 234 55% 58%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 220 14% 96%;
+    --sidebar-accent-foreground: 221 39% 11%;
+    --sidebar-border: 220 13% 91%;
+    --sidebar-ring: 234 55% 58%;
+
+    --severity-critical: 345 72% 51%;
+    --severity-high: 25 95% 53%;
+    --severity-medium: 38 92% 50%;
+    --severity-low: 142 70% 40%;
+  }
+
+  .dark {
+    --background: 240 6% 6%;
+    --foreground: 0 0% 90%;
+
+    --card: 240 5% 9%;
+    --card-foreground: 0 0% 90%;
+
+    --popover: 240 5% 9%;
+    --popover-foreground: 0 0% 90%;
+
+    --primary: 234 55% 60%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 240 4% 14%;
+    --secondary-foreground: 0 0% 90%;
+
+    --muted: 240 4% 14%;
+    --muted-foreground: 0 0% 50%;
+
+    --accent: 240 4% 14%;
+    --accent-foreground: 0 0% 90%;
+
+    --destructive: 345 90% 60%;
+    --destructive-foreground: 0 0% 100%;
+
+    --success: 145 100% 50%;
+    --success-foreground: 0 0% 100%;
+
+    --warning: 38 100% 55%;
+    --warning-foreground: 0 0% 100%;
+
+    --info: 199 100% 55%;
+    --info-foreground: 0 0% 100%;
+
+    --border: 240 4% 26%;
+    --input: 240 4% 26%;
+    --ring: 234 55% 60%;
+
+    --sidebar-background: 240 6% 5%;
+    --sidebar-foreground: 0 0% 55%;
+    --sidebar-primary: 234 55% 60%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 240 5% 10%;
+    --sidebar-accent-foreground: 0 0% 85%;
+    --sidebar-border: 240 4% 26%;
+    --sidebar-ring: 234 55% 60%;
+
+    --severity-critical: 345 90% 60%;
+    --severity-high: 25 100% 58%;
+    --severity-medium: 38 100% 55%;
+    --severity-low: 145 100% 50%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  html {
+    background-color: hsl(210 20% 98%);
+  }
+
+  html.dark {
+    background-color: hsl(240 6% 4%);
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-family: 'Geist', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+    font-size: 14px;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-medium tracking-tight;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   Ghost scrollbar — global custom overlay scrollbar
+   Transparent track (blends into any background), thin rounded pill thumb,
+   hidden by default and only visible while actively scrolling (body.is-scrolling,
+   toggled from JS) or while hovering the scrollbar area. Fades out ~1s after
+   scrolling stops. Applies to the page and every scrollable element.
+--------------------------------------------------------------------------- */
+
+/* WebKit / Blink (Chrome, Edge, Safari) */
+html,
+body,
+* {
+  scrollbar-width: thin;                 /* Firefox */
+  scrollbar-color: transparent transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+*::-webkit-scrollbar-track,
+*::-webkit-scrollbar-corner {
+  background: transparent;               /* no track, ever */
+}
+
+*::-webkit-scrollbar-thumb {
+  background-color: transparent;         /* hidden by default */
+  border: 1px solid transparent;         /* insets the pill to ~6px, keeps it off the edge */
+  border-radius: 9999px;                 /* pill shape */
+  background-clip: content-box;
+  transition: background-color 0.3s ease-out;
+}
+
+/* Visible while actively scrolling (JS adds body.is-scrolling). Covers the
+   page/viewport scrollbar (owned by <html>, reached via :has), the body's own,
+   and every nested scroll container. */
+html:has(body.is-scrolling)::-webkit-scrollbar-thumb,
+body.is-scrolling::-webkit-scrollbar-thumb,
+body.is-scrolling *::-webkit-scrollbar-thumb {
+  background-color: rgba(120, 120, 130, 0.5);
+}
+
+/* ...or while hovering the scrollbar area itself (the thumb still occupies its
+   track slot even while transparent, so this catches a direct gutter hover). */
+*::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(120, 120, 130, 0.75);
+}
+
+/* Firefox: show a thin thumb only while scrolling (no per-state control there) */
+html:has(body.is-scrolling),
+body.is-scrolling,
+body.is-scrolling * {
+  scrollbar-color: rgba(120, 120, 130, 0.5) transparent;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *::-webkit-scrollbar-thumb {
+    transition: none;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   WYSIWYG math field — rendered math sits inline as non-editable atoms.
+--------------------------------------------------------------------------- */
+.math-field:empty::before,
+.math-field:has(> br:only-child)::before {
+  content: attr(data-placeholder);
+  color: hsl(var(--muted-foreground));
+  pointer-events: none;
+}
+
+.math-field {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* Atoms read as a single object: solid chip, never a text caret. */
+.math-field .math-atom {
+  display: inline-block;
+  padding: 0 2px;
+  border-radius: 3px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.math-field .math-atom:hover {
+  background-color: hsl(var(--secondary));
+}
+
+/* Named handle for the ghost scrollbar. The rules above already apply globally
+   via `*`, but this class makes the intent explicit on a specific scroll
+   container (e.g. the PDF viewer pane) and turns the element into one. */
+.ghost-scroll {
+  overflow: auto;
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+
+.ghost-scroll::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.ghost-scroll::-webkit-scrollbar-track,
+.ghost-scroll::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+.ghost-scroll::-webkit-scrollbar-thumb {
+  background-color: transparent;
+  border: 1px solid transparent;
+  border-radius: 9999px;
+  background-clip: content-box;
+  transition: background-color 0.3s ease-out;
+}
+
+body.is-scrolling .ghost-scroll::-webkit-scrollbar-thumb {
+  background-color: rgba(120, 120, 130, 0.5);
+}
+
+.ghost-scroll::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(120, 120, 130, 0.75);
+}
+
+body.is-scrolling .ghost-scroll {
+  scrollbar-color: rgba(120, 120, 130, 0.5) transparent;
+}
