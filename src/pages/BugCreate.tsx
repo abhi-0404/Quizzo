@@ -412,20 +412,15 @@ export default function CreateContent() {
    * exactly like hand-authored ones — editable, removable, and re-serialised to
    * LaTeX by the same code path.
    */
-  const importPyqCourse = (
-    imported: Question[],
-    course: { name: string },
-    paperName: string
-  ) => {
+  const importPyqCourse = (imported: Question[], courseName: string) => {
     const withIds = imported.map((q) => ({ ...q, id: `q-${nextId.current++}` }));
     setQuestions((prev) => [...prev, ...withIds]);
     // The course the admin picked is what this paper is about.
-    setAcademicContext((prev) => ({ ...prev, subject: course.name }));
-    if (paperName) setPdfName(paperName);
+    setAcademicContext((prev) => ({ ...prev, subject: courseName }));
 
     const flagged = withIds.filter((q) => !q.isValid).length;
     toast({
-      title: `Imported ${withIds.length} question${withIds.length === 1 ? "" : "s"} from ${course.name}`,
+      title: `Imported ${withIds.length} question${withIds.length === 1 ? "" : "s"} from ${courseName}`,
       description: flagged
         ? `${flagged} need${flagged === 1 ? "s" : ""} review — open them in the navigator for the reason.`
         : "Every question came through with its answer key.",
@@ -1172,7 +1167,7 @@ export default function CreateContent() {
       </div>
 
       {/* ── PYQ PDF importer ─────────────────────────────────────────────── */}
-      <PyqImport open={pyqOpen} onOpenChange={setPyqOpen} onImport={importPyqCourse} />
+      <PyqImport open={pyqOpen} onOpenChange={setPyqOpen} onLoadIntoBuilder={importPyqCourse} />
 
       {/* ── Bulk LaTeX upload modal ──────────────────────────────────────── */}
       <Dialog open={bulkOpen} onOpenChange={setBulkOpen}>

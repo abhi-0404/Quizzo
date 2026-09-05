@@ -86,7 +86,7 @@ export function durationForExamType(examType: ExamType): number {
  */
 export function normaliseCourseHeading(heading: string): string {
   return heading
-    .replace(/ /g, " ")
+    .replace(/\u00a0/g, " ")
     .trim()
     .replace(/^sem\s*\d+\s+/i, "")
     .replace(/\s+/g, " ")
@@ -118,7 +118,7 @@ function hashableText(s: string): string {
   return s
     .replace(/!\[[^\]]*\]\(asset-[^)]*\)/g, "[figure]")
     .replace(/\b\d{10,}\b/g, "")
-    .replace(/[\s �]+/g, " ")
+    .replace(/[\s\u00a0\ufffd]+/g, " ")
     .trim()
     .toLowerCase();
 }
@@ -197,6 +197,8 @@ export interface MergedPaper {
   totalMarks: number;
   questionCount: number;
   flagged: number;
+  /** Index into the merge input, so figures are cropped from the right PDF. */
+  sourceFileIndex: number;
 }
 
 export interface MergeInput {
@@ -232,7 +234,8 @@ export function mergeSitting(inputs: MergeInput[]): MergedSitting {
   let duplicates = 0;
   let variants = 0;
 
-  for (const { file, paper } of inputs) {
+  for (let fileIndex = 0; fileIndex < inputs.length; fileIndex++) {
+    const { file, paper } = inputs[fileIndex];
     for (const course of paper.courses) {
       const normalised = normaliseCourseHeading(course.name);
       const hash = hashCoursePaper(course.questions);
@@ -263,6 +266,7 @@ export function mergeSitting(inputs: MergeInput[]): MergedSitting {
         totalMarks: marksOfPaper(course.questions),
         questionCount: countOfPaper(course.questions),
         flagged: course.questions.filter((q) => !q.isValid).length,
+        sourceFileIndex: fileIndex,
       });
     }
   }
