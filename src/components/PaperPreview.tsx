@@ -4,6 +4,7 @@ import { UniversalRenderer } from "@/components/UniversalRenderer";
 import {
   isChoiceType, isSingleAnswer, isSubChoice, isSubSingle,
   type Question,
+  type QuestionAsset,
 } from "@/data/questions";
 
 /**
@@ -41,8 +42,17 @@ const CORRECT =
   "border-emerald-500 bg-emerald-50 dark:bg-[#0F1A14] text-emerald-800 dark:text-emerald-300";
 
 function OptionRow({
+  assets,
   letter, text, correct, showAnswers, round,
-}: { letter: string; text: string; correct: boolean; showAnswers: boolean; round: boolean }) {
+}: {
+  letter: string;
+  text: string;
+  correct: boolean;
+  showAnswers: boolean;
+  round: boolean;
+  /** Figures the option text may reference; an imported option can be a figure. */
+  assets?: QuestionAsset[];
+}) {
   const reveal = showAnswers && correct;
   return (
     <div
@@ -57,7 +67,7 @@ function OptionRow({
       >
         {reveal ? <Check className="h-3 w-3" /> : letter}
       </span>
-      <UniversalRenderer className="text-[13px] leading-relaxed" content={text} />
+      <UniversalRenderer className="text-[13px] leading-relaxed" content={text} assets={assets} />
     </div>
   );
 }
@@ -152,7 +162,7 @@ export function PaperPreview({
                     {q.passage.trim() && (
                       <div className="mb-4 border border-border rounded-md bg-muted px-4 py-3">
                         <p className="text-[11px] uppercase tracking-[0.08em] text-muted-foreground mb-1">Passage</p>
-                        <UniversalRenderer className="text-[13px] leading-relaxed" content={q.passage} />
+                        <UniversalRenderer className="text-[13px] leading-relaxed" content={q.passage} assets={q.assets} />
                       </div>
                     )}
                     <div className="space-y-5">
@@ -161,7 +171,7 @@ export function PaperPreview({
                           <span className="text-[13px] font-medium tabular-nums shrink-0">{start + si + 1}.</span>
                           <div className="min-w-0 flex-1">
                             <div className="flex items-start justify-between gap-3">
-                              <UniversalRenderer className="text-[13px] leading-relaxed" content={sq.stem} />
+                              <UniversalRenderer className="text-[13px] leading-relaxed" content={sq.stem} assets={sq.assets} />
                               <span className="shrink-0 text-[11px] text-muted-foreground tabular-nums">[{sq.marks}]</span>
                             </div>
                             <div className="mt-3">
@@ -175,6 +185,7 @@ export function PaperPreview({
                                       correct={sq.correct.includes(oi)}
                                       showAnswers={showAnswers}
                                       round={isSubSingle(sq.type)}
+                                      assets={sq.assets}
                                     />
                                   ))}
                                 </div>
@@ -219,7 +230,7 @@ export function PaperPreview({
                     <span className="text-[13px] font-medium tabular-nums shrink-0">{num}.</span>
                     <div className="min-w-0 flex-1">
                       <div className="flex items-start justify-between gap-3">
-                        <UniversalRenderer className="text-[13px] leading-relaxed" content={q.stem} />
+                        <UniversalRenderer className="text-[13px] leading-relaxed" content={q.stem} assets={q.assets} />
                         <span className="shrink-0 text-[11px] text-muted-foreground tabular-nums">[{q.marks}]</span>
                       </div>
                       <div className="mt-3">
@@ -233,6 +244,7 @@ export function PaperPreview({
                                 correct={q.correct.includes(oi)}
                                 showAnswers={showAnswers}
                                 round={isSingleAnswer(q.type)}
+                                assets={q.assets}
                               />
                             ))}
                           </div>

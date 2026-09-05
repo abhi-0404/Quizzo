@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import html2canvas from "html2canvas";
 import { loadPreviewPaper } from "@/data/preview-paper";
 import { UniversalRenderer } from "@/components/UniversalRenderer";
+import type { QuestionAsset } from "@/data/questions";
 
 type Status = "notVisited" | "notAnswered" | "answered" | "marked";
 type QType = "single" | "multi" | "comprehension" | "integer";
@@ -17,6 +18,8 @@ interface Question {
   options: string[];
   passage?: string;
   marks: number;
+  /** Figures the stem, options or passage reference as `asset-<id>`. */
+  assets?: QuestionAsset[];
 }
 
 const TOTAL_QUESTIONS = 30;
@@ -499,11 +502,11 @@ export default function Exam() {
                 numerical), so key the passage off the passage itself. */}
             {q.passage && (
               <div className="max-h-48 overflow-y-auto bg-gray-100 dark:bg-[#1E1E24] p-4 rounded-lg border border-gray-200 dark:border-gray-800 mb-4 text-gray-800 dark:text-gray-200 whitespace-pre-line text-sm">
-                <UniversalRenderer content={q.passage} />
+                <UniversalRenderer content={q.passage} assets={q.assets} />
               </div>
             )}
 
-            <p className="text-lg leading-relaxed text-gray-900 dark:text-white mb-6"><UniversalRenderer content={q.text} /></p>
+            <p className="text-lg leading-relaxed text-gray-900 dark:text-white mb-6"><UniversalRenderer content={q.text} assets={q.assets} /></p>
 
             {q.type === "single" && (
               <div className="space-y-3">
@@ -528,7 +531,7 @@ export default function Exam() {
                       >
                         {String.fromCharCode(65 + i)}
                       </span>
-                      <span className="text-sm text-gray-900 dark:text-white"><UniversalRenderer content={opt} /></span>
+                      <span className="text-sm text-gray-900 dark:text-white"><UniversalRenderer content={opt} assets={q.assets} /></span>
                     </button>
                   );
                 })}
@@ -559,7 +562,7 @@ export default function Exam() {
                       >
                         {isSelected ? "✓" : String.fromCharCode(65 + i)}
                       </span>
-                      <span className="text-sm text-gray-900 dark:text-white"><UniversalRenderer content={opt} /></span>
+                      <span className="text-sm text-gray-900 dark:text-white"><UniversalRenderer content={opt} assets={q.assets} /></span>
                     </button>
                   );
                 })}
@@ -589,7 +592,7 @@ export default function Exam() {
                       >
                         {String.fromCharCode(65 + i)}
                       </span>
-                      <span className="text-sm text-gray-900 dark:text-white"><UniversalRenderer content={opt} /></span>
+                      <span className="text-sm text-gray-900 dark:text-white"><UniversalRenderer content={opt} assets={q.assets} /></span>
                     </button>
                   );
                 })}

@@ -27,6 +27,23 @@ export const SUB_TYPES: { key: SubQType; label: string }[] = [
 
 export const DEFAULT_MARKS = 4;
 
+/**
+ * A figure belonging to a question — a diagram, plot, or a formula the source
+ * PDF rasterised instead of setting as text.
+ *
+ * Stems, options and passages reference an asset by id, as `![alt](asset-<id>)`.
+ * That is a protocol-less URL, so it survives `rehype-sanitize` untouched and
+ * the renderer resolves it against this list; the `src` data URL never has to
+ * pass through the sanitiser, and no `data:` protocol has to be whitelisted.
+ */
+export interface QuestionAsset {
+  /** Unique within its question. Referenced as `asset-<id>`. */
+  id: string;
+  /** `data:image/png;base64,…` — self-contained, so no storage bucket is needed. */
+  src: string;
+  alt: string;
+}
+
 /** A comprehension parent holds these; each carries its own marks. */
 export interface SubQuestion {
   id: string;
@@ -36,6 +53,7 @@ export interface SubQuestion {
   options: string[];
   correct: number[];
   numericalAnswer: string;
+  assets: QuestionAsset[];
 }
 
 export interface QuestionDraft {
@@ -51,6 +69,8 @@ export interface QuestionDraft {
   correct: number[];
   numericalAnswer: string;
   marks: number;
+  /** Figures referenced from `stem`, `options` or `passage`. Usually empty. */
+  assets: QuestionAsset[];
 }
 
 export interface Question extends QuestionDraft {
@@ -72,6 +92,7 @@ export const blankDraft = (): QuestionDraft => ({
   correct: [],
   numericalAnswer: "",
   marks: DEFAULT_MARKS,
+  assets: [],
 });
 
 export const blankSubQuestion = (id: string): SubQuestion => ({
@@ -82,6 +103,7 @@ export const blankSubQuestion = (id: string): SubQuestion => ({
   options: ["", "", "", ""],
   correct: [],
   numericalAnswer: "",
+  assets: [],
 });
 
 /** Top-level choice types (comprehension is a container, not a question). */
