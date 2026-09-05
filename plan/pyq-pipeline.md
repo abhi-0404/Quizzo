@@ -1,8 +1,9 @@
 # PYQ Ingestion Pipeline — TCS iON Exam PDFs
 
 > Implements [issue #1](https://github.com/abhi-0404/Quizzo/issues/1), ported from the
-> proposed Colab/Python pipeline to the app's own stack: everything runs **in the
-> browser**, inside the admin Paper Builder. No Python, no server, no API key.
+> proposed Colab/Python pipeline to the app's own stack: extraction runs **in the
+> browser**, inside the admin Paper Builder, and the results are stored in
+> Supabase and served to students. No Python, no server, no OCR service, no API key.
 
 ---
 
@@ -147,3 +148,105 @@ The browser path — worker, canvas cropping, alpha keying, dark-theme rendering
 exercised against the sample paper in Chromium: importing "Deep Learning" produced 11
 questions and 37 figures with no console errors, and ~92% of a cropped figure's pixels
 came back fully transparent.
+
+---
+
+# Part 2 — Platform integration
+
+Extraction alone left the work in a dead end: an import lived in React state,
+`publishPaper()` was a mock, and a refresh threw it away. This part stores what
+was extracted and puts it in front of students.
+
+## What the source data forced
+
+Two measurements decided the schema.
+
+**Exam codes of one cohort are duplicates.** QDB2 vs QDB3 (Quiz 1): 15/15 courses
+byte-identical. QDB1 vs QDB2 (End Term): 12/12. So re-importing another code must
+not create a second paper.
+
+**Cohorts are not duplicates of each other.** On the same date, in the same slot,
+Degree and Diploma "AI" share only 29 questions; Diploma and Foundation "MLF"
+share 13. Deduping across cohorts would have destroyed real papers.
+
+Hence `papers` is unique on **(sitting, course, programme, content_hash)** —
+programme in the key, the hash making a repeat import idempotent.
+
+A third measurement removed a feature: exam type cannot be read from the PDF.
+`Group Minimum Duration` is 90 on quizzes as well as end terms, and `Duration`
+varies 90/120/180 between two codes of the same sitting. The admin picks it, with
+the date pre-filling from the academic calendar.
+
+## Data model
+
+| Table | Holds |
+|---|---|
+| `courses` / `course_aliases` | the catalog, and the abbreviations papers use for it |
+| `sittings` | one exam date and type |
+| `papers` | one course × cohort × content, with `source_codes[]` |
+| `questions` | the flattened question list, options and key in `jsonb` |
+| `question_assets` | figures, pointing into the `question-figures` bucket |
+| `attempts` / `attempt_answers` | what a student did, per question |
+
+Comprehension groups are **expanded into one question row per sub-question** at
+publish time, each carrying the shared passage. `attempt_answers` is unique on
+(attempt, question), so nested children sharing their parent's row id would have
+allowed only one recorded answer per group.
+
+Read policies include `anon` — the degree browser, course pages and the runner are
+all reachable signed out. Paper, question and asset reads are
+`published = true OR has_role(admin)`, so an admin can read back rows it has
+inserted but not yet published.
+
+## Modules added
+
+| File | Role |
+|---|---|
+| `src/lib/pyq-ingest.ts` | pure: filename parsing, heading normalisation, content hash, merging PDFs into a sitting |
+| `src/lib/pyq-publish.ts` | Supabase writes: courses, aliases, sittings, papers, questions, figures |
+| `src/lib/pyq-read.ts` | every student-facing query, plus attempts |
+| `src/lib/grade.ts` | scoring, kept free of the Supabase import so it stays testable |
+| `src/data/course-icons.ts` | slug → icon, since an icon cannot live in the database |
+
+## Verification
+
+- **100 tests.** The two that matter most run against real extractions: two exam
+  codes of one cohort collapse to a single paper, and two cohorts of the same
+  course do not.
+- **Publish path** is exercised against a stand-in Supabase client — upsert keys,
+  publish-after-questions ordering, comprehension expansion, figure dedup.
+- **Browser run** against the dev server: every student page degrades to an
+  honest empty state with no database, and all five `/admin/*` routes redirect a
+  signed-out visitor to `/auth`.
+
+Not verifiable here: anything requiring a real database. The migration, the RLS
+policies and the live publish are written but unrun until the schema is applied.
+
+## Deploying this
+
+1. **Apply the migrations** (Supabase SQL editor, or `supabase db push`):
+   `supabase/migrations/20260731000000_*.sql` then `20260731000100_*.sql`.
+2. **Create the admin account** in Supabase Auth, then grant it the role:
+   ```sql
+   INSERT INTO public.user_roles (user_id, role)
+   VALUES ('<the new user uuid>', 'admin');
+   ```
+   The old `admin@quizzo` / `123` bypass is gone — it never created a session, so
+   `auth.uid()` was null and admin-only RLS could never have worked.
+3. **Set real credentials** in `.env` (`VITE_SUPABASE_URL`,
+   `VITE_SUPABASE_PUBLISHABLE_KEY`).
+4. **Import a sitting**: `/admin/create` → *Import PYQ PDF* → select every PDF for
+   one exam date → confirm the exam type → map any unrecognised course headings →
+   Publish.
+5. **Check it as a student**: the degree browser should show real paper counts,
+   and a paper should open, score and appear in Profile history.
+
+## Known gaps
+
+- Per-question timing is not recorded; the report shows session length instead.
+- 17 alphanumeric answers (for example `A,B,E,D,C`) map to the runner's numeric
+  keypad and cannot be typed. Flagged on import, not fixed.
+- Courses created during an import land `confirmed = false` with a guessed level;
+  they need naming and levelling in the catalog.
+- `src/test/pdf-extract.integration.test.ts` skips unless the original sample PDF
+  is present in `samples/`.
