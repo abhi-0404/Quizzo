@@ -379,6 +379,365 @@ export type Database = {
         }
         Relationships: []
       }
+      attempt_answers: {
+        Row: {
+          attempt_id: string
+          created_at: string
+          id: string
+          marks_awarded: number
+          question_id: string
+          response: Json | null
+          status: Database["public"]["Enums"]["answer_status"]
+          time_seconds: number
+        }
+        Insert: {
+          attempt_id: string
+          created_at?: string
+          id?: string
+          marks_awarded?: number
+          question_id: string
+          response?: Json | null
+          status?: Database["public"]["Enums"]["answer_status"]
+          time_seconds?: number
+        }
+        Update: {
+          attempt_id?: string
+          created_at?: string
+          id?: string
+          marks_awarded?: number
+          question_id?: string
+          response?: Json | null
+          status?: Database["public"]["Enums"]["answer_status"]
+          time_seconds?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "attempt_answers_attempt_id_fkey"
+            columns: ["attempt_id"]
+            isOneToOne: false
+            referencedRelation: "attempts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "attempt_answers_question_id_fkey"
+            columns: ["question_id"]
+            isOneToOne: false
+            referencedRelation: "questions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      attempts: {
+        Row: {
+          correct_count: number
+          created_at: string
+          duration_seconds: number
+          id: string
+          incorrect_count: number
+          mode: Database["public"]["Enums"]["attempt_mode"]
+          paper_id: string
+          score: number
+          skipped_count: number
+          started_at: string
+          submitted_at: string | null
+          total_marks: number
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          correct_count?: number
+          created_at?: string
+          duration_seconds?: number
+          id?: string
+          incorrect_count?: number
+          mode?: Database["public"]["Enums"]["attempt_mode"]
+          paper_id: string
+          score?: number
+          skipped_count?: number
+          started_at?: string
+          submitted_at?: string | null
+          total_marks?: number
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          correct_count?: number
+          created_at?: string
+          duration_seconds?: number
+          id?: string
+          incorrect_count?: number
+          mode?: Database["public"]["Enums"]["attempt_mode"]
+          paper_id?: string
+          score?: number
+          skipped_count?: number
+          started_at?: string
+          submitted_at?: string | null
+          total_marks?: number
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "attempts_paper_id_fkey"
+            columns: ["paper_id"]
+            isOneToOne: false
+            referencedRelation: "papers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      course_aliases: {
+        Row: {
+          alias: string
+          course_id: string
+          created_at: string
+          id: string
+        }
+        Insert: {
+          alias: string
+          course_id: string
+          created_at?: string
+          id?: string
+        }
+        Update: {
+          alias?: string
+          course_id?: string
+          created_at?: string
+          id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "course_aliases_course_id_fkey"
+            columns: ["course_id"]
+            isOneToOne: false
+            referencedRelation: "courses"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      courses: {
+        Row: {
+          confirmed: boolean
+          created_at: string
+          id: string
+          level: Database["public"]["Enums"]["course_level"]
+          name: string
+          slug: string
+          updated_at: string
+        }
+        Insert: {
+          confirmed?: boolean
+          created_at?: string
+          id?: string
+          level?: Database["public"]["Enums"]["course_level"]
+          name: string
+          slug: string
+          updated_at?: string
+        }
+        Update: {
+          confirmed?: boolean
+          created_at?: string
+          id?: string
+          level?: Database["public"]["Enums"]["course_level"]
+          name?: string
+          slug?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      papers: {
+        Row: {
+          content_hash: string
+          course_id: string
+          created_at: string
+          duration_minutes: number
+          id: string
+          programme: Database["public"]["Enums"]["exam_programme"]
+          published: boolean
+          question_count: number
+          sitting_id: string
+          slot: Database["public"]["Enums"]["exam_slot"]
+          source_codes: string[]
+          total_marks: number
+          updated_at: string
+          variant_label: string
+        }
+        Insert: {
+          content_hash: string
+          course_id: string
+          created_at?: string
+          duration_minutes?: number
+          id?: string
+          programme: Database["public"]["Enums"]["exam_programme"]
+          published?: boolean
+          question_count?: number
+          sitting_id: string
+          slot?: Database["public"]["Enums"]["exam_slot"]
+          source_codes?: string[]
+          total_marks?: number
+          updated_at?: string
+          variant_label?: string
+        }
+        Update: {
+          content_hash?: string
+          course_id?: string
+          created_at?: string
+          duration_minutes?: number
+          id?: string
+          programme?: Database["public"]["Enums"]["exam_programme"]
+          published?: boolean
+          question_count?: number
+          sitting_id?: string
+          slot?: Database["public"]["Enums"]["exam_slot"]
+          source_codes?: string[]
+          total_marks?: number
+          updated_at?: string
+          variant_label?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "papers_course_id_fkey"
+            columns: ["course_id"]
+            isOneToOne: false
+            referencedRelation: "courses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "papers_sitting_id_fkey"
+            columns: ["sitting_id"]
+            isOneToOne: false
+            referencedRelation: "sittings"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      question_assets: {
+        Row: {
+          alt: string
+          asset_key: string
+          created_at: string
+          id: string
+          question_id: string
+          storage_path: string
+        }
+        Insert: {
+          alt?: string
+          asset_key: string
+          created_at?: string
+          id?: string
+          question_id: string
+          storage_path: string
+        }
+        Update: {
+          alt?: string
+          asset_key?: string
+          created_at?: string
+          id?: string
+          question_id?: string
+          storage_path?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "question_assets_question_id_fkey"
+            columns: ["question_id"]
+            isOneToOne: false
+            referencedRelation: "questions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      questions: {
+        Row: {
+          correct: Json
+          created_at: string
+          id: string
+          issues: Json
+          kind: Database["public"]["Enums"]["question_kind"]
+          marks: number
+          numerical_answer: string
+          options: Json
+          paper_id: string
+          passage: string
+          position: number
+          source_question_id: string
+          stem: string
+          sub_questions: Json
+          updated_at: string
+        }
+        Insert: {
+          correct?: Json
+          created_at?: string
+          id?: string
+          issues?: Json
+          kind: Database["public"]["Enums"]["question_kind"]
+          marks?: number
+          numerical_answer?: string
+          options?: Json
+          paper_id: string
+          passage?: string
+          position: number
+          source_question_id?: string
+          stem?: string
+          sub_questions?: Json
+          updated_at?: string
+        }
+        Update: {
+          correct?: Json
+          created_at?: string
+          id?: string
+          issues?: Json
+          kind?: Database["public"]["Enums"]["question_kind"]
+          marks?: number
+          numerical_answer?: string
+          options?: Json
+          paper_id?: string
+          passage?: string
+          position?: number
+          source_question_id?: string
+          stem?: string
+          sub_questions?: Json
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "questions_paper_id_fkey"
+            columns: ["paper_id"]
+            isOneToOne: false
+            referencedRelation: "papers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      sittings: {
+        Row: {
+          created_at: string
+          exam_date: string
+          exam_type: Database["public"]["Enums"]["exam_type"]
+          id: string
+          term: string
+          updated_at: string
+          year: number
+        }
+        Insert: {
+          created_at?: string
+          exam_date: string
+          exam_type: Database["public"]["Enums"]["exam_type"]
+          id?: string
+          term?: string
+          updated_at?: string
+          year: number
+        }
+        Update: {
+          created_at?: string
+          exam_date?: string
+          exam_type?: Database["public"]["Enums"]["exam_type"]
+          id?: string
+          term?: string
+          updated_at?: string
+          year?: number
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
@@ -403,7 +762,9 @@ export type Database = {
       }
     }
     Enums: {
+      answer_status: "correct" | "incorrect" | "skipped"
       app_role: "admin" | "moderator" | "user"
+      attempt_mode: "exam" | "practice"
       bug_severity: "critical" | "high" | "medium" | "low"
       bug_status:
         | "new"
@@ -412,6 +773,11 @@ export type Database = {
         | "testing"
         | "resolved"
         | "closed"
+      course_level: "foundation" | "diploma" | "degree"
+      exam_programme: "foundation" | "diploma" | "degree" | "improvement"
+      exam_slot: "fn" | "an"
+      exam_type: "quiz_1" | "quiz_2" | "end_term"
+      question_kind: "single" | "multi" | "numerical" | "comprehension"
     }
     CompositeTypes: {
       [_ in never]: never

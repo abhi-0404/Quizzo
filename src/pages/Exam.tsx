@@ -4,8 +4,13 @@ import { Calculator as CalculatorIcon, Camera, ChevronLeft, ChevronRight, Delete
 import { useTheme } from "next-themes";
 import { toast } from "sonner";
 import html2canvas from "html2canvas";
+import { useQuery } from "@tanstack/react-query";
 import { loadPreviewPaper } from "@/data/preview-paper";
+import { loadPaper, saveAttempt, type LoadedQuestion } from "@/lib/pyq-read";
+import { gradeAnswer } from "@/lib/grade";
+import { useAuth } from "@/contexts/AuthContext";
 import { UniversalRenderer } from "@/components/UniversalRenderer";
+import type { QuestionAsset } from "@/data/questions";
 
 type Status = "notVisited" | "notAnswered" | "answered" | "marked";
 type QType = "single" | "multi" | "comprehension" | "integer";
@@ -17,6 +22,13 @@ interface Question {
   options: string[];
   passage?: string;
   marks: number;
+  /** Figures the stem, options or passage reference as `asset-<id>`. */
+  assets?: QuestionAsset[];
+  /** Database id, so an attempt can record an answer against this question. */
+  questionId?: string;
+  /** The key extracted from the source paper. Empty for the admin preview. */
+  correct?: number[];
+  numericalAnswer?: string;
 }
 
 const TOTAL_QUESTIONS = 30;
@@ -111,12 +123,27 @@ export default function Exam() {
   const isPreview = searchParams.get("preview") === "1";
   const previewPaper = useMemo(() => (isPreview ? loadPreviewPaper() : null), [isPreview]);
 
-  const questions = useMemo(
-    () => previewPaper?.questions ?? makeQuestions(subject),
-    [previewPaper, subject]
-  );
+  /* ── A published paper, addressed by id ────────────────────────────────── */
+  const paperId = searchParams.get("paper");
+  const { user } = useAuth();
+  const { data: loaded, isLoading: paperLoading } = useQuery({
+    queryKey: ["paper", paperId],
+    queryFn: () => loadPaper(paperId!),
+    enabled: !!paperId && !isPreview,
+  });
+
+  const questions: Question[] = useMemo(() => {
+    if (loaded) return loaded.questions as Question[];
+    if (previewPaper) return previewPaper.questions as Question[];
+    // Nothing addressed and nothing previewed — the sample paper, as before.
+    return makeQuestions(subject);
+  }, [loaded, previewPaper, subject]);
+
   const total = questions.length;
-  const durationMinutes = previewPaper?.durationMinutes ?? 60;
+  const durationMinutes =
+    loaded?.paper.durationMinutes ?? previewPaper?.durationMinutes ?? 60;
+  /** Only a real, published paper can be scored and recorded. */
+  const isScored = !!loaded;
 
   const [started, setStarted] = useState(false);
   const [agreed, setAgreed] = useState(false);
@@ -127,7 +154,21 @@ export default function Exam() {
     arr[0] = "notAnswered";
     return arr;
   });
+  // Same reason as the clock: `total` is 0 until the paper loads.
+  useEffect(() => {
+    setStatuses((prev) => {
+      if (prev.length === total) return prev;
+      const arr = Array<Status>(total).fill("notVisited");
+      if (total > 0) arr[0] = "notAnswered";
+      return arr;
+    });
+  }, [total]);
   const [seconds, setSeconds] = useState(isPractice ? 0 : durationMinutes * 60);
+  const [submitting, setSubmitting] = useState(false);
+  // The paper arrives after the first render, so the clock is set when it does.
+  useEffect(() => {
+    if (!isPractice) setSeconds(durationMinutes * 60);
+  }, [durationMinutes, isPractice]);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [paletteCollapsed, setPaletteCollapsed] = useState(false);
   const [solutionOpen, setSolutionOpen] = useState<Record<number, boolean>>({});
@@ -165,6 +206,56 @@ export default function Exam() {
   const submitReport = () => {
     toast.success(`Reported: ${reportReason}`);
     setReportOpen(false);
+  };
+
+  /**
+   * Finish the session.
+   *
+   * A published paper is graded against the key extracted from the PDF and the
+   * attempt is stored, so the report shows what actually happened. The preview
+   * and sample papers have no key, so they just navigate as before.
+   */
+  const finishSession = async () => {
+    if (!isScored || !loaded) {
+      navigate(`/${slug}/${courseSlug}/report?mode=${sessionMode}`);
+      return;
+    }
+
+    const graded = loaded.questions.map((q: LoadedQuestion, i: number) => {
+      const outcome = gradeAnswer(q, answers[i] as never);
+      return {
+        questionId: q.questionId,
+        response: answers[i] ?? null,
+        status: outcome.status,
+        marks: outcome.marks,
+        timeSeconds: 0,
+      };
+    });
+
+    if (!user) {
+      // Signed-out students can still sit a paper; there is nowhere to store it.
+      toast.info("Sign in to save your attempt");
+      navigate(`/${slug}/${courseSlug}/report?mode=${sessionMode}`);
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      const attemptId = await saveAttempt({
+        userId: user.id,
+        paperId: loaded.paper.id,
+        mode: sessionMode,
+        durationSeconds: isPractice ? seconds : durationMinutes * 60 - seconds,
+        totalMarks: loaded.paper.totalMarks,
+        answers: graded as never,
+      });
+      navigate(`/${slug}/${courseSlug}/report?attempt=${attemptId}&mode=${sessionMode}`);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not save your attempt");
+      navigate(`/${slug}/${courseSlug}/report?mode=${sessionMode}`);
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const timerRef = useRef<number | null>(null);
@@ -253,6 +344,27 @@ export default function Exam() {
   };
 
   // -------- Instruction View --------
+  // A paper addressed by id is not there on first render; showing the sample
+  // paper for a beat would be worse than showing nothing.
+  if (paperLoading) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-gray-50 dark:bg-[#0B0B0F] text-gray-600 dark:text-gray-400">
+        Loading paper…
+      </div>
+    );
+  }
+
+  if (paperId && !loaded && !isPreview) {
+    return (
+      <div className="flex h-screen flex-col items-center justify-center gap-3 bg-gray-50 dark:bg-[#0B0B0F] text-gray-600 dark:text-gray-400">
+        <p>That paper is not available.</p>
+        <Link to={`/${slug}/${courseSlug}`} className="underline underline-offset-2">
+          Back to the course
+        </Link>
+      </div>
+    );
+  }
+
   if (!started) {
     return (
       <div className="min-h-screen bg-gray-50 dark:bg-[#0B0B0F] text-gray-900 dark:text-white">
@@ -441,7 +553,8 @@ export default function Exam() {
           </button>
           <ThemeButton />
           <button
-            onClick={() => navigate(`/${slug}/${courseSlug}/report?mode=${sessionMode}`)}
+            onClick={() => void finishSession()}
+            disabled={submitting}
             className={`text-white text-sm font-medium px-4 py-2 rounded-md ${isPractice ? "bg-gray-800 hover:bg-gray-700 dark:bg-gray-200 dark:text-black dark:hover:bg-white" : "bg-rose-600 hover:bg-rose-500"}`}
           >
             {isPractice ? "End Practice" : "Submit Exam"}
@@ -499,11 +612,11 @@ export default function Exam() {
                 numerical), so key the passage off the passage itself. */}
             {q.passage && (
               <div className="max-h-48 overflow-y-auto bg-gray-100 dark:bg-[#1E1E24] p-4 rounded-lg border border-gray-200 dark:border-gray-800 mb-4 text-gray-800 dark:text-gray-200 whitespace-pre-line text-sm">
-                <UniversalRenderer content={q.passage} />
+                <UniversalRenderer content={q.passage} assets={q.assets} />
               </div>
             )}
 
-            <p className="text-lg leading-relaxed text-gray-900 dark:text-white mb-6"><UniversalRenderer content={q.text} /></p>
+            <p className="text-lg leading-relaxed text-gray-900 dark:text-white mb-6"><UniversalRenderer content={q.text} assets={q.assets} /></p>
 
             {q.type === "single" && (
               <div className="space-y-3">
@@ -528,7 +641,7 @@ export default function Exam() {
                       >
                         {String.fromCharCode(65 + i)}
                       </span>
-                      <span className="text-sm text-gray-900 dark:text-white"><UniversalRenderer content={opt} /></span>
+                      <span className="text-sm text-gray-900 dark:text-white"><UniversalRenderer content={opt} assets={q.assets} /></span>
                     </button>
                   );
                 })}
@@ -559,7 +672,7 @@ export default function Exam() {
                       >
                         {isSelected ? "✓" : String.fromCharCode(65 + i)}
                       </span>
-                      <span className="text-sm text-gray-900 dark:text-white"><UniversalRenderer content={opt} /></span>
+                      <span className="text-sm text-gray-900 dark:text-white"><UniversalRenderer content={opt} assets={q.assets} /></span>
                     </button>
                   );
                 })}
@@ -589,7 +702,7 @@ export default function Exam() {
                       >
                         {String.fromCharCode(65 + i)}
                       </span>
-                      <span className="text-sm text-gray-900 dark:text-white"><UniversalRenderer content={opt} /></span>
+                      <span className="text-sm text-gray-900 dark:text-white"><UniversalRenderer content={opt} assets={q.assets} /></span>
                     </button>
                   );
                 })}
@@ -634,31 +747,33 @@ export default function Exam() {
 
 
             {isPractice && solutionOpen[current] && (() => {
-              const correctIdx = current % 4;
-              const correctInt = ((current * 7) % 100) + 1;
+              /* The answer used to be invented from the question's position on
+                 screen. It now comes from the key extracted out of the paper —
+                 which is the entire point of the import pipeline. */
+              const key = q.correct ?? [];
+              const hasKey = isScored && (key.length > 0 || !!q.numericalAnswer);
               const answerLabel =
                 q.type === "integer"
-                  ? String(correctInt)
-                  : q.type === "multi"
-                  ? [correctIdx, (correctIdx + 2) % 4]
-                      .sort()
-                      .map((i) => String.fromCharCode(65 + i))
-                      .join(", ")
-                  : String.fromCharCode(65 + correctIdx);
+                  ? q.numericalAnswer
+                  : [...key].sort((a, b) => a - b).map((i) => String.fromCharCode(65 + i)).join(", ");
+
               return (
                 <div className="bg-gray-50 dark:bg-[#16161D] border border-emerald-500/50 rounded-lg p-5 mt-4">
                   <div className="text-emerald-700 dark:text-emerald-400 font-bold text-sm mb-2 flex items-center gap-2">
                     <span className="inline-block h-2 w-2 rounded-full bg-emerald-500" />
-                    Solution &amp; Explanation
+                    Solution
                   </div>
-                  <div className="mb-3">
-                    <span className="inline-block bg-emerald-100 dark:bg-emerald-900/30 text-emerald-800 dark:text-emerald-300 px-3 py-1 rounded text-sm font-semibold">
-                      Correct Answer: {answerLabel}
-                    </span>
-                  </div>
-                  <p className="text-gray-700 dark:text-gray-300 text-sm leading-relaxed">
-                    Step 1: Identify the key concept referenced in the question. Step 2: Apply the relevant definition or formula to the given values. Step 3: Simplify carefully and compare with the available options. The reasoning above leads to the correct choice highlighted. This placeholder explanation will be replaced with the actual step-by-step solution for question {current + 1}.
-                  </p>
+                  {hasKey ? (
+                    <div className="mb-1">
+                      <span className="inline-block bg-emerald-100 dark:bg-emerald-900/30 text-emerald-800 dark:text-emerald-300 px-3 py-1 rounded text-sm font-semibold">
+                        Correct Answer: {answerLabel}
+                      </span>
+                    </div>
+                  ) : (
+                    <p className="text-gray-700 dark:text-gray-300 text-sm">
+                      This paper carries no answer key.
+                    </p>
+                  )}
                 </div>
               );
             })()}

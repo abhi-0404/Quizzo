@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { ArrowLeft, Moon, Sun, FileText, LogOut } from "lucide-react";
 import { useTheme } from "next-themes";
@@ -7,26 +7,9 @@ import { StackedLogo } from "@/components/StackedLogo";
 import { NavAuthArea } from "@/components/NavAuthArea";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
-import { slugify } from "@/lib/utils";
-
-interface PyqAttempt {
-  id: string;
-  subject: string;
-  paper: string;
-  courseSlug: string;
-  date: string;
-  score: number;
-  total: number;
-}
-
-// Recent practice sessions. Static sample history until attempts are persisted.
-const PYQ_HISTORY: PyqAttempt[] = [
-  { id: "a1", subject: "Statistics I", paper: "Midterm 2023", courseSlug: "statistics-i", date: "12 May 2025", score: 34, total: 40 },
-  { id: "a2", subject: "Mathematics II", paper: "End Term 2024", courseSlug: "mathematics-ii", date: "28 Apr 2025", score: 41, total: 50 },
-  { id: "a3", subject: "Programming in Python", paper: "Quiz 2 2024", courseSlug: "programming-in-python", date: "09 Apr 2025", score: 27, total: 30 },
-  { id: "a4", subject: "Database Management Systems", paper: "Quiz 1 2025", courseSlug: "database-management-systems", date: "21 Mar 2025", score: 22, total: 30 },
-  { id: "a5", subject: "Machine Learning Foundations", paper: "End Term 2023", courseSlug: "machine-learning-foundations", date: "02 Mar 2025", score: 38, total: 50 },
-];
+import { useQuery } from "@tanstack/react-query";
+import { examTypeLabel, listAttempts } from "@/lib/pyq-read";
+import { formatDate } from "@/data/schedule";
 
 function initialsFrom(name: string): string {
   const parts = name.trim().split(/\s+/).filter(Boolean);
@@ -39,19 +22,24 @@ export default function Profile() {
   const { theme, setTheme } = useTheme();
   const navigate = useNavigate();
   const { user, profile, signOut, refreshProfile } = useAuth();
-  const isAdmin = typeof window !== "undefined" && localStorage.getItem("quizzo_admin") === "1";
+  const { data: attempts = [], isLoading: attemptsLoading } = useQuery({
+    queryKey: ["attempts", user?.id],
+    queryFn: () => listAttempts(user!.id),
+    enabled: !!user,
+  });
 
-  if (!user && !isAdmin) {
-    // Not signed in — bounce home
-    navigate("/", { replace: true });
-    return null;
-  }
 
   const [fullName, setFullName] = useState(profile?.full_name || "Abhishek Kumar");
   const [academicTrack, setAcademicTrack] = useState("BS in Data Science and Applications");
   const [newPassword, setNewPassword] = useState("");
   const [savingProfile, setSavingProfile] = useState(false);
   const [updatingPassword, setUpdatingPassword] = useState(false);
+
+  // Not signed in — bounce home. Done in an effect because every hook above
+  // must run on every render; returning early here skipped half of them.
+  useEffect(() => {
+    if (!user) navigate("/", { replace: true });
+  }, [user, navigate]);
 
   const email = user?.email || "abhishek@example.com";
   const initials = useMemo(() => initialsFrom(fullName), [fullName]);
@@ -97,7 +85,6 @@ export default function Profile() {
 
   const handleLogout = async () => {
     try {
-      localStorage.removeItem("quizzo_admin");
       if (user) await signOut();
       toast.success("Logged out");
       navigate("/", { replace: true });
@@ -110,6 +97,8 @@ export default function Profile() {
     "w-full h-9 rounded-md border border-gray-300 dark:border-gray-800 bg-white dark:bg-[#16161D] px-3 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-500 outline-none focus:border-gray-400 dark:focus:border-gray-600 transition-colors";
   const labelClass = "block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1.5";
   const sectionTitleClass = "text-sm font-semibold text-gray-500 dark:text-gray-400 mb-4";
+
+  if (!user) return null;
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-[#0B0B0F] text-gray-900 dark:text-white">
@@ -198,7 +187,15 @@ export default function Profile() {
           <h2 className={sectionTitleClass}>PYQ Practice History</h2>
 
           <div className="rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-[#16161D] overflow-hidden">
-            {PYQ_HISTORY.map((attempt, i) => (
+            {attemptsLoading && (
+              <p className="text-sm text-gray-500 dark:text-gray-400">Loading your history…</p>
+            )}
+            {!attemptsLoading && attempts.length === 0 && (
+              <p className="text-sm text-gray-500 dark:text-gray-400">
+                No attempts yet — sit a paper and it will show up here.
+              </p>
+            )}
+            {attempts.map((attempt, i) => (
               <div
                 key={attempt.id}
                 className={`flex items-center gap-4 px-4 py-3 bg-white dark:bg-[#16161D] hover:bg-gray-50 dark:hover:bg-[#1C1C24] transition-colors ${
@@ -207,20 +204,22 @@ export default function Profile() {
               >
                 <div className="min-w-0 flex-1">
                   <p className="text-sm font-medium text-gray-900 dark:text-white truncate">
-                    {attempt.subject} — {attempt.paper}
+                    {attempt.courseName} — {examTypeLabel(attempt.examType)}
                   </p>
-                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{attempt.date}</p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                    {formatDate(attempt.examDate)}
+                  </p>
                 </div>
 
                 <div className="shrink-0 text-right">
                   <p className="text-sm font-semibold text-gray-900 dark:text-white tabular-nums">
-                    {attempt.score}/{attempt.total}
+                    {attempt.score}/{attempt.totalMarks}
                   </p>
                   <p className="text-xs text-gray-500 dark:text-gray-400">Score</p>
                 </div>
 
                 <Link
-                  to={`/data-science-and-applications/${slugify(attempt.subject)}/report?mode=practice`}
+                  to={`/data-science-and-applications/${attempt.courseSlug}/report?attempt=${attempt.id}`}
                   className="shrink-0 inline-flex items-center gap-1.5 rounded-md border border-gray-200 dark:border-gray-800 bg-gray-100 dark:bg-[#27272A] hover:bg-gray-200 dark:hover:bg-[#323238] text-gray-900 dark:text-white text-xs font-medium px-3 py-1.5 transition-colors"
                 >
                   <FileText className="h-3.5 w-3.5" />

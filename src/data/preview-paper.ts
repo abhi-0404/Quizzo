@@ -1,6 +1,7 @@
 import {
   isSubChoice,
   type Question as BuilderQuestion,
+  type QuestionAsset,
 } from "@/data/questions";
 
 /**
@@ -24,6 +25,8 @@ export interface ExamQuestion {
   options: string[];
   passage?: string;
   marks: number;
+  /** Figures referenced from `text`, `options` or `passage` as `asset-<id>`. */
+  assets?: QuestionAsset[];
 }
 
 export interface PreviewPaper {
@@ -83,7 +86,14 @@ export function toExamQuestions(blocks: BuilderQuestion[]): ExamQuestion[] {
     // Only fall back to raw source when the block has no parsed stem at all —
     // the two views are kept in sync, so a LaTeX-authored block usually has one.
     if (!q.stem.trim() && q.type !== "comprehension") {
-      out.push({ id: ++id, type: "single", text: q.latex.trim(), options: [], marks: q.marks });
+      out.push({
+        id: ++id,
+        type: "single",
+        text: q.latex.trim(),
+        options: [],
+        marks: q.marks,
+        assets: q.assets,
+      });
       continue;
     }
 
@@ -96,6 +106,8 @@ export function toExamQuestions(blocks: BuilderQuestion[]): ExamQuestion[] {
           options: isSubChoice(sq.type) ? sq.options.filter((o) => o.trim()) : [],
           passage: q.passage.trim() || undefined,
           marks: sq.marks,
+          // The passage's figures live on the parent, the stem's on the child.
+          assets: [...q.assets, ...sq.assets],
         });
       }
       continue;
@@ -107,6 +119,7 @@ export function toExamQuestions(blocks: BuilderQuestion[]): ExamQuestion[] {
       text: q.stem.trim(),
       options: q.type === "numerical" ? [] : q.options.filter((o) => o.trim()),
       marks: q.marks,
+      assets: q.assets,
     });
   }
 

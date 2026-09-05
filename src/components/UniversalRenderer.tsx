@@ -6,6 +6,7 @@ import rehypeKatex from "rehype-katex";
 import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
 import { Highlight, themes } from "prism-react-renderer";
 import { Check, Copy } from "lucide-react";
+import type { QuestionAsset } from "@/data/questions";
 
 /**
  * The single rendering surface for every question stem, option and passage.
@@ -155,16 +156,51 @@ const COMPONENTS = {
   p({ children }: any) {
     return <p className="my-1 first:mt-0 last:mb-0 leading-relaxed">{children}</p>;
   },
+  // Without an asset list there is nothing an image reference can resolve to.
+  img() {
+    return null;
+  },
 };
 
 export interface UniversalRendererProps {
   content: string;
   className?: string;
+  /**
+   * Figures this content may reference as `![alt](asset-<id>)`.
+   *
+   * Resolution happens here rather than by inlining the data URL into the
+   * markdown, so the sanitiser never has to allow the `data:` protocol and a
+   * reference that does not match a known asset renders as nothing at all.
+   */
+  assets?: QuestionAsset[];
 }
 
-function UniversalRendererImpl({ content, className = "" }: UniversalRendererProps) {
+function UniversalRendererImpl({ content, className = "", assets }: UniversalRendererProps) {
   // Trimming here keeps a trailing newline from adding an empty paragraph.
   const value = useMemo(() => (content ?? "").replace(/\s+$/, ""), [content]);
+
+  const components = useMemo(() => {
+    if (!assets?.length) return COMPONENTS;
+    return {
+      ...COMPONENTS,
+      img({ src, alt }: { src?: string; alt?: string }) {
+        const asset = assets.find((a) => src === `asset-${a.id}`);
+        if (!asset) return null;
+        return (
+          <img
+            src={asset.src}
+            alt={alt || asset.alt}
+            /* Figures are cropped with a transparent background so they sit on
+               the page colour instead of a white block. That leaves dark ink
+               invisible on the dark theme, so it is inverted there — with the
+               hue rotated back, which keeps coloured plots recognisable. */
+            className="my-2 max-w-full dark:invert dark:hue-rotate-180"
+          />
+        );
+      },
+    };
+  }, [assets]);
+
   if (!value) return null;
 
   return (
@@ -172,7 +208,7 @@ function UniversalRendererImpl({ content, className = "" }: UniversalRendererPro
       <ReactMarkdown
         remarkPlugins={REMARK_PLUGINS}
         rehypePlugins={REHYPE_PLUGINS}
-        components={COMPONENTS}
+        components={components}
       >
         {value}
       </ReactMarkdown>

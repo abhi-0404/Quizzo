@@ -38,11 +38,11 @@ const App = () => {
             <Routes>
               <Route path="/auth" element={<Auth />} />
               <Route path="/" element={<Index />} />
-              <Route path="/admin/overview" element={<ProtectedRoute><Overview /></ProtectedRoute>} />
-              <Route path="/admin/create" element={<ProtectedRoute><CreateContent /></ProtectedRoute>} />
-              <Route path="/admin/bank" element={<ProtectedRoute><QuestionBank /></ProtectedRoute>} />
-              <Route path="/admin/schedule" element={<ProtectedRoute><Schedule /></ProtectedRoute>} />
-              <Route path="/admin/performance" element={<ProtectedRoute><Performance /></ProtectedRoute>} />
+              <Route path="/admin/overview" element={<ProtectedRoute requireAdmin><Overview /></ProtectedRoute>} />
+              <Route path="/admin/create" element={<ProtectedRoute requireAdmin><CreateContent /></ProtectedRoute>} />
+              <Route path="/admin/bank" element={<ProtectedRoute requireAdmin><QuestionBank /></ProtectedRoute>} />
+              <Route path="/admin/schedule" element={<ProtectedRoute requireAdmin><Schedule /></ProtectedRoute>} />
+              <Route path="/admin/performance" element={<ProtectedRoute requireAdmin><Performance /></ProtectedRoute>} />
               <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
               <Route path="/profile" element={<Profile />} />
               <Route path="/:slug/:courseSlug/exam" element={<Exam />} />

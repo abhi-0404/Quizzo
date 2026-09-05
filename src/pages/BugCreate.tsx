@@ -8,7 +8,7 @@ import { useToast } from "@/hooks/use-toast";
 import {
   ArrowLeft, Loader2, Upload, Check, Eye, Send, Plus, X,
   ChevronDown, ChevronRight, FileText, FileCode, PanelRightClose, PanelRightOpen,
-  Pencil, AlertTriangle, PlayCircle, Timer,
+  Pencil, AlertTriangle, PlayCircle, Timer, FileUp,
 } from "lucide-react";
 import {
   SCHEDULE_SEED, findAssessmentDate, formatDate, termKeyFromLabel,
@@ -25,6 +25,7 @@ import { MathText } from "@/components/MathText";
 import { MathField } from "@/components/MathField";
 import { storePreviewPaper, toExamQuestions, durationToMinutes } from "@/data/preview-paper";
 import { PaperPreview } from "@/components/PaperPreview";
+import { PyqImport } from "@/components/PyqImport";
 import { slugify } from "@/lib/utils";
 
 /* ── Exam context taxonomy ───────────────────────────────────────────────── */
@@ -116,6 +117,7 @@ export default function CreateContent() {
   const [previewOpen, setPreviewOpen] = useState(false);
   const [publishing, setPublishing] = useState(false);
   const [bulkOpen, setBulkOpen] = useState(false);
+  const [pyqOpen, setPyqOpen] = useState(false);
   // Draft survives closing the modal *and* a page reload.
   const [bulkText, setBulkText] = useState(() => {
     try {
@@ -175,7 +177,19 @@ export default function CreateContent() {
   const invalidCount = useMemo(() => questions.filter((q) => !q.isValid).length, [questions]);
 
   /** First non-empty line, used for the one-line summary on stream cards. */
-  const firstLine = (s: string) => (s.trim().split("\n")[0] || "");
+  /**
+   * First readable line, for the one-line summary in the question stream.
+   *
+   * Figure references are markdown, so an imported question whose stem is only a
+   * diagram would otherwise be listed as `![Question figure](asset-f3)`. They
+   * collapse to their alt text instead, which is what the block actually is.
+   */
+  const firstLine = (s: string) =>
+    s
+      .replace(/!\[([^\]]*)\]\(asset-[A-Za-z0-9]+\)/g, (_, alt) => alt || "Figure")
+      .trim()
+      .split("\n")
+      .find((l) => l.trim()) ?? "";
 
   /** Slot elements, so the navigator can scroll a question into view. */
   const itemRefs = useRef<Record<string, HTMLDivElement | null>>({});
@@ -231,7 +245,11 @@ export default function CreateContent() {
     setDraft((prev) => {
       const parsed = parseBulkPaper(src).blocks[0];
       if (!parsed) return { ...prev, latex: src };
-      const { isValid: _v, issues: _i, inputMode: _m, latex: _l, ...fields } = parsed;
+      // `assets` is dropped alongside the view-only fields: the bulk dialect has
+      // no figure syntax, so a re-parse always reports an empty list. Letting it
+      // through would strip an imported question's figures while leaving the
+      // `![…](asset-id)` references behind, and they would then render as nothing.
+      const { isValid: _v, issues: _i, inputMode: _m, latex: _l, assets: _a, ...fields } = parsed;
       return { ...prev, ...fields, latex: src };
     });
 
@@ -385,6 +403,29 @@ export default function CreateContent() {
       toast({ title: "Question added to paper" });
     }
     resetEditor();
+  };
+
+  /**
+   * Append a course imported from a TCS iON paper.
+   *
+   * Ids are reassigned to the builder's own sequence so imported blocks behave
+   * exactly like hand-authored ones — editable, removable, and re-serialised to
+   * LaTeX by the same code path.
+   */
+  const importPyqCourse = (imported: Question[], courseName: string) => {
+    const withIds = imported.map((q) => ({ ...q, id: `q-${nextId.current++}` }));
+    setQuestions((prev) => [...prev, ...withIds]);
+    // The course the admin picked is what this paper is about.
+    setAcademicContext((prev) => ({ ...prev, subject: courseName }));
+
+    const flagged = withIds.filter((q) => !q.isValid).length;
+    toast({
+      title: `Imported ${withIds.length} question${withIds.length === 1 ? "" : "s"} from ${courseName}`,
+      description: flagged
+        ? `${flagged} need${flagged === 1 ? "s" : ""} review — open them in the navigator for the reason.`
+        : "Every question came through with its answer key.",
+      variant: flagged ? "destructive" : undefined,
+    });
   };
 
   /** Run the bulk parser and append the parsed blocks to the paper. */
@@ -1001,6 +1042,9 @@ export default function CreateContent() {
                 <button onClick={() => setBulkOpen(true)} className={secondaryBtnClass}>
                   <FileCode className="h-3.5 w-3.5" /> Bulk Upload (LaTeX)
                 </button>
+                <button onClick={() => setPyqOpen(true)} className={secondaryBtnClass}>
+                  <FileUp className="h-3.5 w-3.5" /> Import PYQ PDF
+                </button>
               </div>
 
               <div className="flex items-center gap-2">
@@ -1121,6 +1165,9 @@ export default function CreateContent() {
           </div>
         </div>
       </div>
+
+      {/* ── PYQ PDF importer ─────────────────────────────────────────────── */}
+      <PyqImport open={pyqOpen} onOpenChange={setPyqOpen} onLoadIntoBuilder={importPyqCourse} />
 
       {/* ── Bulk LaTeX upload modal ──────────────────────────────────────── */}
       <Dialog open={bulkOpen} onOpenChange={setBulkOpen}>

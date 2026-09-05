@@ -336,6 +336,8 @@ export function parseBulkPaper(rawText: string): ParseResult {
           options: padOptions(body.options),
           correct: body.correct,
           numericalAnswer: body.numericalAnswer,
+          // The bulk dialect has no figure syntax; imported papers carry them.
+          assets: [],
         });
         continue;
       }

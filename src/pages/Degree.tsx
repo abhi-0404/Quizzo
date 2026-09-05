@@ -1,35 +1,10 @@
 import { Link, useParams } from "react-router-dom";
 import { useMemo, useState } from "react";
-import { slugify } from "@/lib/utils";
+import { useQuery } from "@tanstack/react-query";
+import { listCourses, type CourseSummary } from "@/lib/pyq-read";
+import { iconForCourse } from "@/data/course-icons";
 
-import {
-  ArrowLeft,
-  ArrowRight,
-  Moon,
-  Sun,
-  BookOpen,
-  Sigma,
-  BarChart3,
-  Code2,
-  Database,
-  Coffee,
-  Binary,
-  Layers,
-  FunctionSquare,
-  Brain,
-  Cpu,
-  Briefcase,
-  LineChart,
-  Bug,
-  TerminalSquare,
-  Server,
-  MicroscopeIcon,
-  Sparkles,
-  Network,
-  MessagesSquare,
-  Gamepad2,
-  type LucideIcon,
-} from "lucide-react";
+import { ArrowLeft, ArrowRight, Moon, Sun } from "lucide-react";
 import { useTheme } from "next-themes";
 import { StackedLogo } from "@/components/StackedLogo";
 import { NavAuthArea } from "@/components/NavAuthArea";
@@ -44,45 +19,19 @@ const DEGREES: Record<string, string> = {
 type Level = "Foundation" | "Diploma" | "Degree";
 type Exam = "Quiz 1" | "Quiz 2" | "End Term";
 
-interface Course {
-  name: string;
-  level: Level;
-  icon: LucideIcon;
-}
-
-const COURSES: Course[] = [
-  { name: "English I", level: "Foundation", icon: BookOpen },
-  { name: "English II", level: "Foundation", icon: BookOpen },
-  { name: "Mathematics I", level: "Foundation", icon: Sigma },
-  { name: "Mathematics II", level: "Foundation", icon: Sigma },
-  { name: "Statistics I", level: "Foundation", icon: BarChart3 },
-  { name: "Statistics II", level: "Foundation", icon: BarChart3 },
-  { name: "Computational Thinking", level: "Foundation", icon: Binary },
-  { name: "Programming in Python", level: "Foundation", icon: Code2 },
-
-  { name: "Database Management Systems", level: "Diploma", icon: Database },
-  { name: "Programming in Java", level: "Diploma", icon: Coffee },
-  { name: "Data Structures and Algorithms", level: "Diploma", icon: Layers },
-  { name: "Modern Application Development I", level: "Diploma", icon: TerminalSquare },
-  { name: "Modern Application Development II", level: "Diploma", icon: TerminalSquare },
-  { name: "Mathematical Methods for Data Science", level: "Diploma", icon: FunctionSquare },
-  { name: "Machine Learning Foundations", level: "Diploma", icon: Brain },
-  { name: "Machine Learning Techniques", level: "Diploma", icon: Brain },
-  { name: "Business Data Management", level: "Diploma", icon: Briefcase },
-  { name: "Business Analytics", level: "Diploma", icon: LineChart },
-
-  { name: "Software Engineering", level: "Degree", icon: Cpu },
-  { name: "Software Testing", level: "Degree", icon: Bug },
-  { name: "Operating Systems", level: "Degree", icon: Server },
-  { name: "Computer Systems Architecture", level: "Degree", icon: MicroscopeIcon },
-  { name: "Artificial Intelligence", level: "Degree", icon: Sparkles },
-  { name: "Deep Learning", level: "Degree", icon: Network },
-  { name: "Big Data Analytics", level: "Degree", icon: Database },
-  { name: "Natural Language Processing", level: "Degree", icon: MessagesSquare },
-  { name: "Reinforcement Learning", level: "Degree", icon: Gamepad2 },
-];
-
 const LEVELS: Level[] = ["Foundation", "Diploma", "Degree"];
+
+/** UI labels map onto the database enums. */
+const LEVEL_KEY: Record<Level, CourseSummary["level"]> = {
+  Foundation: "foundation",
+  Diploma: "diploma",
+  Degree: "degree",
+};
+const EXAM_KEY: Record<Exam, "quiz_1" | "quiz_2" | "end_term"> = {
+  "Quiz 1": "quiz_1",
+  "Quiz 2": "quiz_2",
+  "End Term": "end_term",
+};
 const EXAMS: Exam[] = ["Quiz 1", "Quiz 2", "End Term"];
 
 function Segmented<T extends string>(props: {
@@ -114,16 +63,6 @@ function Segmented<T extends string>(props: {
   );
 }
 
-// Deterministic pseudo-counts so cards feel populated without a backend.
-function counts(name: string, exam: Exam) {
-  let h = 0;
-  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;
-  const base = exam === "End Term" ? 8 : exam === "Quiz 2" ? 5 : 4;
-  const papers = base + (h % 4);
-  const questions = 40 + (h % 120) + (exam === "End Term" ? 60 : 0);
-  return { papers, questions };
-}
-
 const Degree = () => {
   const { slug = "" } = useParams();
   const { theme, setTheme } = useTheme();
@@ -133,7 +72,22 @@ const Degree = () => {
   const [exam, setExam] = useState<Exam>("Quiz 1");
 
   const isDS = slug === "data-science-and-applications";
-  const filtered = useMemo(() => COURSES.filter((c) => c.level === level), [level]);
+
+  const { data: courses = [], isLoading } = useQuery({
+    queryKey: ["courses"],
+    queryFn: listCourses,
+  });
+
+  // Only courses that actually have a paper for the selected exam are shown:
+  // the filter used to be decorative, driven by a hash of the course name.
+  const examKey = EXAM_KEY[exam];
+  const filtered = useMemo(
+    () =>
+      courses.filter(
+        (c) => c.level === LEVEL_KEY[level] && c.byExamType[examKey].papers > 0
+      ),
+    [courses, level, examKey]
+  );
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -185,17 +139,26 @@ const Degree = () => {
                 <Segmented<Exam> options={EXAMS} value={exam} onChange={setExam} />
               </div>
               <p className="mt-3 text-[12.5px] text-muted-foreground">
-                Showing courses for {exam} in {level} level
+                Showing {level} courses with {exam} papers
               </p>
+
+              {isLoading && (
+                <p className="mt-10 text-[13.5px] text-muted-foreground">Loading courses…</p>
+              )}
+              {!isLoading && filtered.length === 0 && (
+                <p className="mt-10 text-[13.5px] text-muted-foreground">
+                  No {exam} papers have been published for {level} level yet.
+                </p>
+              )}
 
               {/* Grid */}
               <div className="mt-8 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {filtered.map((c) => {
-                  const Icon = c.icon;
-                  const { papers, questions } = counts(c.name, exam);
+                  const Icon = iconForCourse(c.slug);
+                  const { papers, questions } = c.byExamType[examKey];
                   return (
                     <div
-                      key={c.name}
+                      key={c.id}
                       className="group flex flex-col rounded-lg border border-border bg-card p-5 transition-colors hover:bg-secondary hover:border-foreground/20"
                     >
                       <div className="flex items-start justify-between">
@@ -203,7 +166,7 @@ const Degree = () => {
                           <Icon className="h-4 w-4" />
                         </div>
                         <span className="rounded-full border border-border bg-background px-2.5 py-0.5 text-[10px] font-medium tracking-[0.08em] uppercase text-muted-foreground">
-                          {c.level}
+                          {level}
                         </span>
                       </div>
 
@@ -212,14 +175,14 @@ const Degree = () => {
                       </h3>
 
                       <div className="mt-2 flex items-center gap-3 text-[12px] text-muted-foreground">
-                        <span>{papers} Papers Available</span>
+                        <span>{papers} Paper{papers === 1 ? "" : "s"} Available</span>
                         <span className="h-1 w-1 rounded-full bg-border" />
                         <span>{questions} Total Questions</span>
                       </div>
 
                       <div className="mt-5 pt-4 border-t border-border">
                         <Link
-                          to={`/${slug}/${slugify(c.name)}?level=${encodeURIComponent(level)}&exam=${encodeURIComponent(exam)}`}
+                          to={`/${slug}/${c.slug}?exam=${encodeURIComponent(exam)}`}
                           className="group/btn inline-flex w-full items-center justify-between rounded-md border border-border bg-background px-3 py-2 text-[12.5px] text-foreground transition-colors hover:bg-muted hover:border-foreground/30"
                         >
                           Select Paper

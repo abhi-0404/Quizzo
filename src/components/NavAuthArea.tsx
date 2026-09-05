@@ -5,8 +5,7 @@ import { UserCircle } from "lucide-react";
 /** Shows Log in / Sign up when signed out, or a profile icon linking to /profile when signed in. */
 export function NavAuthArea() {
   const { user } = useAuth();
-  const isAdmin = typeof window !== "undefined" && localStorage.getItem("quizzo_admin") === "1";
-  const isAuthed = !!user || isAdmin;
+  const isAuthed = !!user;
 
   if (isAuthed) {
     return (
