@@ -4,7 +4,9 @@ import { ArrowLeft, Moon, Sun } from "lucide-react";
 import { useTheme } from "next-themes";
 import { StackedLogo } from "@/components/StackedLogo";
 import { NavAuthArea } from "@/components/NavAuthArea";
-import { slugify } from "@/lib/utils";
+import { useQuery } from "@tanstack/react-query";
+import { examTypeLabel, listPapersForCourse, type PaperSummary } from "@/lib/pyq-read";
+import { formatDate } from "@/data/schedule";
 import {
   Select,
   SelectContent,
@@ -20,31 +22,16 @@ const DEGREES: Record<string, string> = {
   "aeronautics-and-space-technology": "Aeronautics and Space Technology",
 };
 
-type Term = "All" | "Jan" | "May" | "Sep";
-type Year = "All" | "2025" | "2024" | "2023";
+type Term = "All" | "Jan" | "May" | "Sept";
+type Year = string;
 
-interface Paper {
-  date: string;
-  term: Term;
-  year: number;
-  duration: string;
-  questions: number;
-}
+const TERMS: Term[] = ["All", "Jan", "May", "Sept"];
 
-
-const TERMS: Term[] = ["All", "Jan", "May", "Sep"];
-const YEARS: Year[] = ["All", "2025", "2024", "2023"];
-
-// Seed data for all courses; dates are deterministic by course name.
-const BASE_PAPERS: Omit<Paper, "year">[] = [
-  { date: "22 Jan 2025", term: "Jan", duration: "1 hour", questions: 50 },
-  { date: "14 May 2025", term: "May", duration: "1 hour", questions: 50 },
-  { date: "30 Sep 2024", term: "Sep", duration: "1 hour", questions: 50 },
-  { date: "25 Feb 2025", term: "Jan", duration: "1 hour", questions: 50 },
-  { date: "13 Jul 2025", term: "May", duration: "1 hour", questions: 50 },
-  { date: "18 Sep 2023", term: "Sep", duration: "1 hour", questions: 50 },
-];
-
+/** "May Term" -> "May", so a stored term matches the filter chips. */
+const termChip = (term: string): Term => {
+  const head = term.split(" ")[0];
+  return (TERMS as string[]).includes(head) ? (head as Term) : "All";
+};
 
 function WhatsAppIcon({ className }: { className?: string }) {
   return (
@@ -88,73 +75,41 @@ function Segmented<T extends string>(props: {
   );
 }
 
-function getPapersForCourse(courseName: string): Paper[] {
-  let h = 0;
-  for (let i = 0; i < courseName.length; i++) h = (h * 31 + courseName.charCodeAt(i)) >>> 0;
-  const years = [2025, 2024, 2023, 2025, 2024, 2023];
-  return BASE_PAPERS.map((p, i) => ({
-    ...p,
-    year: years[(h + i) % years.length],
-  }));
-}
-
-
-
 function CourseDetail() {
   const { slug = "", courseSlug = "" } = useParams();
   const { theme, setTheme } = useTheme();
   const [searchParams] = useSearchParams();
   const degreeName = DEGREES[slug] ?? "Unknown Degree";
 
-  const levelFromQuery = searchParams.get("level") ?? "Foundation";
-  const examFromQuery = searchParams.get("exam") ?? "Quiz 1";
+  const examFromQuery = searchParams.get("exam") ?? "";
 
   const [term, setTerm] = useState<Term>("All");
   const [year, setYear] = useState<Year>("All");
 
-  const courseName = useMemo(() => {
-    // Find a course that matches the slug; otherwise fall back to a title-cased version.
-    const allCourses = [
-      "English I",
-      "English II",
-      "Mathematics I",
-      "Mathematics II",
-      "Statistics I",
-      "Statistics II",
-      "Computational Thinking",
-      "Programming in Python",
-      "Database Management Systems",
-      "Programming in Java",
-      "Data Structures and Algorithms",
-      "Modern Application Development I",
-      "Modern Application Development II",
-      "Mathematical Methods for Data Science",
-      "Machine Learning Foundations",
-      "Machine Learning Techniques",
-      "Business Data Management",
-      "Business Analytics",
-      "Software Engineering",
-      "Software Testing",
-      "Operating Systems",
-      "Computer Systems Architecture",
-      "Artificial Intelligence",
-      "Deep Learning",
-      "Big Data Analytics",
-      "Natural Language Processing",
-      "Reinforcement Learning",
-    ];
-    return allCourses.find((c) => slugify(c) === courseSlug) ?? courseSlug.replace(/-/g, " ");
-  }, [courseSlug]);
+  const { data: papers = [], isLoading } = useQuery({
+    queryKey: ["papers", courseSlug],
+    queryFn: () => listPapersForCourse(courseSlug),
+  });
 
-  const papers = useMemo(() => getPapersForCourse(courseName), [courseName]);
+  // The heading used to be recovered by matching the slug against a third copy
+  // of the course list; it now comes back with the papers.
+  const courseName = papers[0]?.courseName ?? courseSlug.replace(/-/g, " ");
 
-  const filteredPapers = useMemo(() => {
-    return papers.filter((p) => {
-      const termMatch = term === "All" || p.term === term;
-      const yearMatch = year === "All" || p.year === Number(year);
-      return termMatch && yearMatch;
-    });
-  }, [papers, term, year]);
+  // Year options come from the papers that exist rather than a fixed list.
+  const years = useMemo(
+    () => ["All", ...[...new Set(papers.map((p) => String(p.year)))].sort((a, b) => b.localeCompare(a))],
+    [papers]
+  );
+
+  const filteredPapers = useMemo(
+    () =>
+      papers.filter((p) => {
+        const termMatch = term === "All" || termChip(p.term) === term;
+        const yearMatch = year === "All" || String(p.year) === year;
+        return termMatch && yearMatch;
+      }),
+    [papers, term, year]
+  );
 
   const shareUrl = typeof window !== "undefined" ? window.location.href : "";
   const shareText = `Check out ${courseName} past papers on QUIZZO`;
@@ -200,11 +155,13 @@ function CourseDetail() {
                 {courseName}
               </h1>
               <div className="mt-3 flex flex-wrap items-center gap-2">
+                {examFromQuery && (
+                  <span className="rounded-full border border-border bg-secondary px-3 py-1 text-[11px] font-medium tracking-[0.06em] uppercase text-foreground">
+                    {examFromQuery}
+                  </span>
+                )}
                 <span className="rounded-full border border-border bg-secondary px-3 py-1 text-[11px] font-medium tracking-[0.06em] uppercase text-foreground">
-                  {levelFromQuery}
-                </span>
-                <span className="rounded-full border border-border bg-secondary px-3 py-1 text-[11px] font-medium tracking-[0.06em] uppercase text-foreground">
-                  {examFromQuery}
+                  {papers.length} paper{papers.length === 1 ? "" : "s"}
                 </span>
               </div>
             </div>
@@ -230,7 +187,7 @@ function CourseDetail() {
                 <SelectValue placeholder="Year" />
               </SelectTrigger>
               <SelectContent className="bg-popover border-border text-popover-foreground">
-                {YEARS.map((y) => (
+                {years.map((y) => (
                   <SelectItem key={y} value={y} className="text-[12.5px]">
                     {y}
                   </SelectItem>
@@ -241,33 +198,40 @@ function CourseDetail() {
 
           {/* Paper grid */}
           <div className="mt-8 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-            {filteredPapers.map((paper, idx) => (
+            {filteredPapers.map((paper: PaperSummary) => (
               <div
-                key={`${paper.date}-${idx}`}
+                key={paper.id}
                 className="flex flex-col rounded-xl border border-border bg-card p-5 transition-colors hover:border-foreground/20 hover:bg-secondary"
               >
-                <h3 className="text-lg font-medium text-foreground">{paper.date}</h3>
+                <h3 className="text-lg font-medium text-foreground">{formatDate(paper.examDate)}</h3>
                 <p className="mt-1 text-[12.5px] text-muted-foreground">
-                  Duration: {paper.duration}
+                  {examTypeLabel(paper.examType)}
+                  {paper.variantLabel ? ` · ${paper.variantLabel}` : ""}
+                </p>
+                <p className="text-[12.5px] text-muted-foreground capitalize">
+                  {paper.programme} · {paper.term}
                 </p>
                 <p className="text-[12.5px] text-muted-foreground">
-                  Questions: {paper.questions}
+                  Duration: {paper.durationMinutes} min
                 </p>
                 <p className="text-[12.5px] text-muted-foreground">
-                  Marks: {paper.questions * 4}
+                  Questions: {paper.questionCount}
+                </p>
+                <p className="text-[12.5px] text-muted-foreground">
+                  Marks: {paper.totalMarks}
                 </p>
 
                 <div className="my-4 border-t border-border" />
 
                 <div className="flex flex-col gap-2">
                   <Link
-                    to={`/${slug}/${courseSlug}/exam?level=${encodeURIComponent(levelFromQuery)}&exam=${encodeURIComponent(examFromQuery)}&mode=exam`}
+                    to={`/${slug}/${courseSlug}/exam?paper=${paper.id}&mode=exam`}
                     className="w-full rounded-md border border-border bg-secondary px-3 py-2 text-[12.5px] text-foreground transition-colors hover:border-foreground/30 hover:bg-muted text-center"
                   >
                     Exam Mode
                   </Link>
                   <Link
-                    to={`/${slug}/${courseSlug}/exam?level=${encodeURIComponent(levelFromQuery)}&exam=${encodeURIComponent(examFromQuery)}&mode=practice`}
+                    to={`/${slug}/${courseSlug}/exam?paper=${paper.id}&mode=practice`}
                     className="w-full rounded-md border border-border bg-card px-3 py-2 text-[12.5px] text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground text-center"
                   >
                     Practice Mode
@@ -277,10 +241,14 @@ function CourseDetail() {
             ))}
           </div>
 
-
-          {filteredPapers.length === 0 && (
+          {isLoading && (
+            <p className="mt-10 text-[13.5px] text-muted-foreground">Loading papers…</p>
+          )}
+          {!isLoading && filteredPapers.length === 0 && (
             <p className="mt-10 text-[13.5px] text-muted-foreground">
-              No papers match the selected filters.
+              {papers.length === 0
+                ? "No papers have been published for this course yet."
+                : "No papers match the selected filters."}
             </p>
           )}
         </div>

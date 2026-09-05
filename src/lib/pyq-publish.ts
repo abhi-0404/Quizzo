@@ -1,5 +1,5 @@
 import { supabase } from "@/integrations/supabase/client";
-import type { Question, QuestionAsset, SubQuestion } from "@/data/questions";
+import type { Question, QuestionAsset } from "@/data/questions";
 import type { Database } from "@/integrations/supabase/types";
 import {
   courseSlug,
@@ -124,31 +124,6 @@ async function dataUrlToBlob(dataUrl: string): Promise<Blob> {
   return res.blob();
 }
 
-/**
- * Upload one question's figures and return the rows linking them back.
- *
- * `upsert` is on so that re-publishing a paper overwrites rather than erroring,
- * which keeps the whole operation re-runnable.
- */
-async function uploadFigures(
-  paperId: string,
-  questionId: string,
-  assets: QuestionAsset[]
-): Promise<{ question_id: string; asset_key: string; storage_path: string; alt: string }[]> {
-  const rows: { question_id: string; asset_key: string; storage_path: string; alt: string }[] = [];
-  for (const asset of assets) {
-    if (!asset.src.startsWith("data:")) continue;
-    const path = `${paperId}/${questionId}/${asset.id}.png`;
-    const blob = await dataUrlToBlob(asset.src);
-    const { error } = await supabase.storage
-      .from(FIGURE_BUCKET)
-      .upload(path, blob, { contentType: "image/png", upsert: true });
-    if (error) throw error;
-    rows.push({ question_id: questionId, asset_key: asset.id, storage_path: path, alt: asset.alt });
-  }
-  return rows;
-}
-
 export function figureUrl(storagePath: string): string {
   return supabase.storage.from(FIGURE_BUCKET).getPublicUrl(storagePath).data.publicUrl;
 }
@@ -162,8 +137,6 @@ const chunked = <T,>(xs: T[], n = CHUNK): T[][] => {
   for (let i = 0; i < xs.length; i += n) out.push(xs.slice(i, i + n));
   return out;
 };
-
-const kindOf = (q: Question): Database["public"]["Enums"]["question_kind"] => q.type;
 
 export interface PublishParams {
   sitting: MergedSitting;
@@ -253,43 +226,101 @@ async function writePaper(
 }
 
 async function writeQuestions(paperId: string, questions: Question[]): Promise<number> {
-  const rows = questions.map((q, i) => ({
-    paper_id: paperId,
-    position: i + 1,
-    kind: kindOf(q),
-    marks: Number(q.marks) || 0,
-    stem: q.stem,
-    passage: q.passage,
-    options: q.options as unknown as Database["public"]["Tables"]["questions"]["Insert"]["options"],
-    correct: q.correct as unknown as Database["public"]["Tables"]["questions"]["Insert"]["correct"],
-    numerical_answer: q.numericalAnswer,
-    sub_questions: stripSubAssets(q.subQuestions) as unknown as Database["public"]["Tables"]["questions"]["Insert"]["sub_questions"],
-    source_question_id: q.id.replace(/^tcs-/, ""),
-    issues: q.issues as unknown as Database["public"]["Tables"]["questions"]["Insert"]["issues"],
-  }));
+  /* Comprehension parents are expanded into one row per sub-question, each
+     carrying the shared passage.
+   *
+   * The runner flattens them that way regardless, and — the reason it matters —
+   * `attempt_answers` is unique on (attempt, question). Had the children stayed
+   * nested they would all share their parent's row id and only one answer per
+   * comprehension could ever be recorded. */
+  const flat: {
+    row: Database["public"]["Tables"]["questions"]["Insert"];
+    assets: QuestionAsset[];
+  }[] = [];
+
+  for (const q of questions) {
+    const sourceId = q.id.replace(/^tcs-/, "");
+    if (q.type === "comprehension") {
+      for (const sq of q.subQuestions) {
+        flat.push({
+          row: {
+            paper_id: paperId,
+            position: flat.length + 1,
+            kind:
+              sq.type === "numerical" ? "numerical" : sq.type === "multi_correct" ? "multi" : "single",
+            marks: Number(sq.marks) || 0,
+            stem: sq.stem,
+            passage: q.passage,
+            options: sq.options as never,
+            correct: sq.correct as never,
+            numerical_answer: sq.numericalAnswer,
+            sub_questions: [] as never,
+            source_question_id: sourceId,
+            issues: [] as never,
+          },
+          // The passage's figures belong to every child of the group.
+          assets: [...q.assets, ...sq.assets],
+        });
+      }
+      continue;
+    }
+
+    flat.push({
+      row: {
+        paper_id: paperId,
+        position: flat.length + 1,
+        kind: q.type,
+        marks: Number(q.marks) || 0,
+        stem: q.stem,
+        passage: q.passage,
+        options: q.options as never,
+        correct: q.correct as never,
+        numerical_answer: q.numericalAnswer,
+        sub_questions: [] as never,
+        source_question_id: sourceId,
+        issues: q.issues as never,
+      },
+      assets: q.assets,
+    });
+  }
 
   const inserted: { id: string; position: number }[] = [];
-  for (const batch of chunked(rows)) {
+  for (const batch of chunked(flat.map((f) => f.row))) {
     const { data, error } = await supabase.from("questions").insert(batch).select("id, position");
     if (error) throw error;
     inserted.push(...(data ?? []));
   }
 
   const idByPosition = new Map(inserted.map((r) => [r.position, r.id]));
-  let figures = 0;
-  const assetRows: Awaited<ReturnType<typeof uploadFigures>> = [];
 
-  for (let i = 0; i < questions.length; i++) {
-    const q = questions[i];
+  /* Upload each figure once per paper. Asset ids are unique across a whole
+     import, so two questions sharing a passage figure reference one object
+     rather than uploading it twice. */
+  const uploaded = new Map<string, string>();
+  const assetRows: { question_id: string; asset_key: string; storage_path: string; alt: string }[] = [];
+
+  for (let i = 0; i < flat.length; i++) {
     const questionId = idByPosition.get(i + 1);
     if (!questionId) continue;
-    // A comprehension parent owns its children's figures too, since the runner
-    // renders child stems against the parent's asset list.
-    const all = [...q.assets, ...q.subQuestions.flatMap((s) => s.assets)];
-    if (all.length === 0) continue;
-    const rows = await uploadFigures(paperId, questionId, all);
-    assetRows.push(...rows);
-    figures += rows.length;
+    for (const asset of flat[i].assets) {
+      let path = uploaded.get(asset.id);
+      if (!path) {
+        if (!asset.src.startsWith("data:")) continue;
+        path = `${paperId}/${asset.id}.png`;
+        const blob = await dataUrlToBlob(asset.src);
+        const { error } = await supabase.storage
+          .from(FIGURE_BUCKET)
+          .upload(path, blob, { contentType: "image/png", upsert: true });
+        if (error) throw error;
+        uploaded.set(asset.id, path);
+      }
+      assetRows.push({
+        question_id: questionId,
+        asset_key: asset.id,
+        storage_path: path,
+        alt: asset.alt,
+      });
+    }
   }
 
   for (const batch of chunked(assetRows)) {
@@ -299,13 +330,5 @@ async function writeQuestions(paperId: string, questions: Question[]): Promise<n
     if (error) throw error;
   }
 
-  return figures;
-}
-
-/**
- * Sub-question figures are uploaded against the parent row, so the JSON copy
- * keeps only the reference and drops the (very large) data URL.
- */
-function stripSubAssets(subs: SubQuestion[]): SubQuestion[] {
-  return subs.map((s) => ({ ...s, assets: s.assets.map((a) => ({ ...a, src: "" })) }));
+  return uploaded.size;
 }

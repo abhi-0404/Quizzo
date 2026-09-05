@@ -8,6 +8,8 @@ import {
   PieChart, Pie, LineChart, Line, AreaChart, Area, Tooltip, ResponsiveContainer,
 } from "recharts";
 import { NeonPatternDefs, neonPatternId } from "@/components/NeonPatternDefs";
+import { useQuery } from "@tanstack/react-query";
+import { loadAttempt } from "@/lib/pyq-read";
 
 function ThemeButton() {
   const { theme, setTheme } = useTheme();
@@ -40,23 +42,17 @@ interface Row {
   time: number;
 }
 
-function makeRows(): Row[] {
-  const types = ["Single", "Multi", "Comprehension", "Integer"];
-  const rows: Row[] = [];
-  for (let i = 1; i <= 30; i++) {
-    const seed = (i * 7) % 10;
-    const status: Row["status"] = seed < 7 ? "correct" : seed < 9 ? "incorrect" : "skipped";
-    const marks = status === "correct" ? 4 : status === "incorrect" ? -1 : 0;
-    rows.push({
-      qno: i,
-      type: types[i % types.length],
-      status,
-      marks,
-      time: 30 + ((i * 13) % 90),
-    });
-  }
-  return rows;
-}
+/**
+ * The report used to call a generator that returned the same 30 rows for every
+ * course, mode and attempt. It now renders what was actually stored — an
+ * attempt id arrives in the URL when a graded paper is submitted.
+ */
+const KIND_LABEL: Record<string, string> = {
+  single: "Single Correct",
+  multi: "Multi Correct",
+  numerical: "Numerical",
+  comprehension: "Comprehension",
+};
 
 function Panel({ title, subtitle, children }: { title: string; subtitle: string; children: React.ReactNode }) {
   return (
@@ -79,8 +75,28 @@ export default function ExamReport() {
   const [search, setSearch] = useState("");
   const [view, setView] = useState<"list" | "grid">("list");
 
-  const rows = useMemo(() => makeRows(), []);
-  const subject = (courseSlug ?? "subject").split("-").map(s => s[0]?.toUpperCase() + s.slice(1)).join(" ");
+  const attemptId = searchParams.get("attempt");
+  const { data: attempt, isLoading } = useQuery({
+    queryKey: ["attempt", attemptId],
+    queryFn: () => loadAttempt(attemptId!),
+    enabled: !!attemptId,
+  });
+
+  const rows: Row[] = useMemo(
+    () =>
+      (attempt?.answers ?? []).map((a) => ({
+        qno: a.position,
+        type: KIND_LABEL[a.kind] ?? a.kind,
+        status: a.status,
+        marks: a.marksAwarded,
+        time: a.timeSeconds,
+      })),
+    [attempt]
+  );
+
+  const subject =
+    attempt?.courseName ??
+    (courseSlug ?? "subject").split("-").map((s) => s[0]?.toUpperCase() + s.slice(1)).join(" ");
 
   const totals = useMemo(() => {
     const correct = rows.filter(r => r.status === "correct").length;
@@ -92,21 +108,42 @@ export default function ExamReport() {
     const mm = Math.floor(totalTime / 60).toString().padStart(2, "0");
     const ss = (totalTime % 60).toString().padStart(2, "0");
     const acc = attempted ? Math.round((correct / attempted) * 100) : 0;
-    return { correct, incorrect, skipped, attempted, score, timeStr: `${mm}:${ss}`, acc };
-  }, [rows]);
+    const stored = attempt
+      ? {
+          mm: Math.floor(attempt.durationSeconds / 60).toString().padStart(2, "0"),
+          ss: (attempt.durationSeconds % 60).toString().padStart(2, "0"),
+        }
+      : null;
+    return {
+      correct,
+      incorrect,
+      skipped,
+      attempted,
+      score: attempt ? attempt.score : score,
+      // Per-question timing is not recorded yet, so the session length is used.
+      timeStr: stored ? `${stored.mm}:${stored.ss}` : `${mm}:${ss}`,
+      acc,
+      totalMarks: attempt?.totalMarks ?? rows.length * 4,
+      totalQuestions: rows.length,
+    };
+  }, [rows, attempt]);
 
   const statusData = [
     { name: "Correct", value: totals.correct, color: STATUS_COLORS.correct },
     { name: "Incorrect", value: totals.incorrect, color: STATUS_COLORS.incorrect },
     { name: "Skipped", value: totals.skipped, color: STATUS_COLORS.skipped },
-    { name: "Marked", value: 3, color: STATUS_COLORS.marked },
   ];
 
-  const sectionData = [
-    { name: "Section A", value: 40, color: SECTION_COLORS[0] },
-    { name: "Section B", value: 44, color: SECTION_COLORS[1] },
-    { name: "Section C", value: 20, color: SECTION_COLORS[2] },
-  ];
+  // Was three hardcoded numbers; now the real distribution of question types.
+  const sectionData = useMemo(() => {
+    const byType = new Map<string, number>();
+    for (const r of rows) byType.set(r.type, (byType.get(r.type) ?? 0) + 1);
+    return [...byType.entries()].map(([name, value], i) => ({
+      name,
+      value,
+      color: SECTION_COLORS[i % SECTION_COLORS.length],
+    }));
+  }, [rows]);
 
   const timeData = rows.map(r => ({ q: `Q${r.qno}`, time: r.time }));
 
@@ -130,6 +167,28 @@ export default function ExamReport() {
     AREA_COLOR,
     LINE_COLOR,
   ];
+
+  if (attemptId && isLoading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-gray-50 dark:bg-[#0B0B0F] text-gray-600 dark:text-gray-400">
+        Loading your report…
+      </div>
+    );
+  }
+
+  // Reached without an attempt id — a preview or sample run, which records
+  // nothing. Better to say so than to invent a score.
+  if (!attemptId || !attempt) {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center gap-3 bg-gray-50 dark:bg-[#0B0B0F] text-gray-600 dark:text-gray-400">
+        <p>No saved attempt for this session.</p>
+        <p className="text-sm">Sit a published paper while signed in to get a scored report.</p>
+        <Link to={`/${slug}/${courseSlug}`} className="underline underline-offset-2">
+          Back to the course
+        </Link>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-[#0B0B0F] text-gray-900 dark:text-white">
@@ -165,10 +224,10 @@ export default function ExamReport() {
         {/* Metrics */}
         <div className="flex flex-wrap border border-gray-200 dark:border-gray-800 rounded-md overflow-hidden">
           {[
-            { label: "Total Score", value: totals.score, subtitle: "Marks scored" },
+            { label: "Total Score", value: `${totals.score} / ${totals.totalMarks}`, subtitle: "Marks scored" },
             { label: "Accuracy", value: `${totals.acc}%`, subtitle: "Correct vs attempted" },
-            { label: "Time Taken", value: totals.timeStr, subtitle: isPractice ? "Total elapsed time" : "Out of 60 mins" },
-            { label: "Questions Attempted", value: `${totals.attempted} / 30`, subtitle: "Attempted out of 30" },
+            { label: "Time Taken", value: totals.timeStr, subtitle: isPractice ? "Total elapsed time" : "Time in session" },
+            { label: "Questions Attempted", value: `${totals.attempted} / ${totals.totalQuestions}`, subtitle: `Attempted out of ${totals.totalQuestions}` },
           ].map((m, i) => (
             <div
               key={m.label}

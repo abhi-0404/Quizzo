@@ -20,41 +20,67 @@ export type { AnswerStatus, Response } from "./grade";
 export type CourseLevel = Database["public"]["Enums"]["course_level"];
 export type ExamType = Database["public"]["Enums"]["exam_type"];
 
+export interface CourseCounts {
+  papers: number;
+  questions: number;
+}
+
 export interface CourseSummary {
   id: string;
   name: string;
   slug: string;
   level: CourseLevel;
+  /** Totals across every exam type. */
   paperCount: number;
   questionCount: number;
+  /** Same totals split by exam type, so the browser's filter is real. */
+  byExamType: Record<ExamType, CourseCounts>;
 }
+
+const emptyCounts = (): Record<ExamType, CourseCounts> => ({
+  quiz_1: { papers: 0, questions: 0 },
+  quiz_2: { papers: 0, questions: 0 },
+  end_term: { papers: 0, questions: 0 },
+});
 
 /**
  * The catalog, with real paper and question counts.
  *
- * Counts come from the papers themselves rather than a stored tally so they can
- * never drift; `question_count` is denormalised onto `papers` at publish time
- * precisely so this stays one query.
+ * `question_count` is denormalised onto `papers` at publish time precisely so
+ * this stays two queries rather than a count per course.
  */
 export async function listCourses(): Promise<CourseSummary[]> {
   const [{ data: courses }, { data: papers }] = await Promise.all([
     supabase.from("courses").select("id, name, slug, level").order("name"),
-    supabase.from("papers").select("course_id, question_count").eq("published", true),
+    supabase
+      .from("papers")
+      .select("course_id, question_count, sittings!inner(exam_type)")
+      .eq("published", true),
   ]);
 
-  const tally = new Map<string, { papers: number; questions: number }>();
-  for (const p of papers ?? []) {
-    const t = tally.get(p.course_id) ?? { papers: 0, questions: 0 };
-    t.papers += 1;
-    t.questions += p.question_count ?? 0;
-    tally.set(p.course_id, t);
+  const tally = new Map<string, Record<ExamType, CourseCounts>>();
+  for (const row of (papers ?? []) as unknown as {
+    course_id: string;
+    question_count: number | null;
+    sittings: { exam_type: ExamType };
+  }[]) {
+    const forCourse = tally.get(row.course_id) ?? emptyCounts();
+    const bucket = forCourse[row.sittings.exam_type];
+    bucket.papers += 1;
+    bucket.questions += row.question_count ?? 0;
+    tally.set(row.course_id, forCourse);
   }
 
-  return (courses ?? []).map((c) => ({
-    ...c,
-    paperCount: tally.get(c.id)?.papers ?? 0,
-    questionCount: tally.get(c.id)?.questions ?? 0,
-  }));
+  return (courses ?? []).map((c) => {
+    const byExamType = tally.get(c.id) ?? emptyCounts();
+    const all = Object.values(byExamType);
+    return {
+      ...c,
+      byExamType,
+      paperCount: all.reduce((n, b) => n + b.papers, 0),
+      questionCount: all.reduce((n, b) => n + b.questions, 0),
+    };
+  });
 }
 
 export interface PaperSummary {
@@ -167,53 +193,21 @@ export async function loadPaper(paperId: string): Promise<LoadedPaper | null> {
     assetsByQuestion.set(a.question_id, list);
   }
 
-  const questions: LoadedQuestion[] = [];
-  let n = 0;
-
-  for (const row of questionRows ?? []) {
-    const assets = assetsByQuestion.get(row.id) ?? [];
-    const options = (row.options as unknown as string[]) ?? [];
-    const correct = (row.correct as unknown as number[]) ?? [];
-
-    if (row.kind === "comprehension") {
-      const subs = (row.sub_questions as unknown as {
-        type: string;
-        marks: number;
-        stem: string;
-        options: string[];
-        correct: number[];
-        numericalAnswer: string;
-      }[]) ?? [];
-      for (const sq of subs) {
-        questions.push({
-          id: ++n,
-          questionId: row.id,
-          type: sq.type === "numerical" ? "integer" : sq.type === "multi_correct" ? "multi" : "single",
-          text: sq.stem,
-          options: sq.type === "numerical" ? [] : sq.options.filter(Boolean),
-          passage: row.passage || undefined,
-          marks: Number(sq.marks) || 0,
-          assets,
-          correct: sq.correct ?? [],
-          numericalAnswer: sq.numericalAnswer ?? "",
-        });
-      }
-      continue;
-    }
-
-    questions.push({
-      id: ++n,
-      questionId: row.id,
-      type: row.kind === "numerical" ? "integer" : row.kind === "multi" ? "multi" : "single",
-      text: row.stem,
-      options: row.kind === "numerical" ? [] : options.filter(Boolean),
-      passage: row.passage || undefined,
-      marks: Number(row.marks) || 0,
-      assets,
-      correct,
-      numericalAnswer: row.numerical_answer ?? "",
-    });
-  }
+  /* Comprehension groups were expanded into one row per sub-question at publish
+     time, so the rows are already the flat list the runner wants — each child
+     carrying its group's passage. */
+  const questions: LoadedQuestion[] = (questionRows ?? []).map((row, i) => ({
+    id: i + 1,
+    questionId: row.id,
+    type: row.kind === "numerical" ? "integer" : row.kind === "multi" ? "multi" : "single",
+    text: row.stem,
+    options: row.kind === "numerical" ? [] : ((row.options as unknown as string[]) ?? []).filter(Boolean),
+    passage: row.passage || undefined,
+    marks: Number(row.marks) || 0,
+    assets: assetsByQuestion.get(row.id) ?? [],
+    correct: (row.correct as unknown as number[]) ?? [],
+    numericalAnswer: row.numerical_answer ?? "",
+  }));
 
   const r = paperRow as typeof paperRow & {
     courses: { name: string; slug: string };
@@ -431,6 +425,60 @@ export async function listAttempts(userId: string): Promise<AttemptSummary[]> {
       score: Number(r.score),
       totalMarks: r.total_marks,
       submittedAt: r.submitted_at,
+    };
+  });
+}
+
+/* ── Admin question bank ──────────────────────────────────────────────────── */
+
+export interface BankQuestion {
+  id: string;
+  courseName: string;
+  courseSlug: string;
+  kind: Database["public"]["Enums"]["question_kind"];
+  marks: number;
+  stem: string;
+  examType: ExamType;
+  examDate: string;
+  issues: string[];
+}
+
+/**
+ * Every published question, for the admin bank.
+ *
+ * Capped rather than paginated: a term is a few thousand rows, and the bank is
+ * a search-and-scan surface, not a report.
+ */
+export async function listQuestionBank(limit = 1000): Promise<BankQuestion[]> {
+  const { data, error } = await supabase
+    .from("questions")
+    .select("id, kind, marks, stem, issues, papers!inner(courses!inner(name, slug), sittings!inner(exam_date, exam_type))")
+    .order("created_at", { ascending: false })
+    .limit(limit);
+  if (error) throw error;
+
+  return ((data ?? []) as never[]).map((row: never) => {
+    const r = row as unknown as {
+      id: string;
+      kind: Database["public"]["Enums"]["question_kind"];
+      marks: number;
+      stem: string;
+      issues: unknown;
+      papers: {
+        courses: { name: string; slug: string };
+        sittings: { exam_date: string; exam_type: ExamType };
+      };
+    };
+    return {
+      id: r.id,
+      courseName: r.papers.courses.name,
+      courseSlug: r.papers.courses.slug,
+      kind: r.kind,
+      marks: Number(r.marks),
+      stem: r.stem,
+      examType: r.papers.sittings.exam_type,
+      examDate: r.papers.sittings.exam_date,
+      issues: Array.isArray(r.issues) ? (r.issues as string[]) : [],
     };
   });
 }
