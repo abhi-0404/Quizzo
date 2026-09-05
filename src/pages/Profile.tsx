@@ -39,9 +39,9 @@ export default function Profile() {
   const { theme, setTheme } = useTheme();
   const navigate = useNavigate();
   const { user, profile, signOut, refreshProfile } = useAuth();
-  const isAdmin = typeof window !== "undefined" && localStorage.getItem("quizzo_admin") === "1";
 
-  if (!user && !isAdmin) {
+
+  if (!user) {
     // Not signed in — bounce home
     navigate("/", { replace: true });
     return null;
@@ -97,7 +97,6 @@ export default function Profile() {
 
   const handleLogout = async () => {
     try {
-      localStorage.removeItem("quizzo_admin");
       if (user) await signOut();
       toast.success("Logged out");
       navigate("/", { replace: true });

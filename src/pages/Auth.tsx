@@ -49,13 +49,9 @@ export default function Auth() {
     e.preventDefault();
     setIsSubmitting(true);
     try {
-      if (loginEmail === "admin@quizzo" && loginPassword === "123") {
-        localStorage.setItem("quizzo_admin", "1");
-        toast({ title: "Welcome, admin!" });
-        navigate("/admin/overview", { replace: true });
-        return;
-      }
-      localStorage.removeItem("quizzo_admin");
+      // Admins are ordinary Supabase accounts that hold the `admin` role; the
+      // landing route is decided after the session exists, not by a client-side
+      // flag. ProtectedRoute re-checks the role on every admin page anyway.
       await signIn(loginEmail, loginPassword);
       toast({ title: "Welcome back!" });
       navigate("/", { replace: true });
