@@ -344,6 +344,27 @@ export default function Exam() {
   };
 
   // -------- Instruction View --------
+  // A paper addressed by id is not there on first render; showing the sample
+  // paper for a beat would be worse than showing nothing.
+  if (paperLoading) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-gray-50 dark:bg-[#0B0B0F] text-gray-600 dark:text-gray-400">
+        Loading paper…
+      </div>
+    );
+  }
+
+  if (paperId && !loaded && !isPreview) {
+    return (
+      <div className="flex h-screen flex-col items-center justify-center gap-3 bg-gray-50 dark:bg-[#0B0B0F] text-gray-600 dark:text-gray-400">
+        <p>That paper is not available.</p>
+        <Link to={`/${slug}/${courseSlug}`} className="underline underline-offset-2">
+          Back to the course
+        </Link>
+      </div>
+    );
+  }
+
   if (!started) {
     return (
       <div className="min-h-screen bg-gray-50 dark:bg-[#0B0B0F] text-gray-900 dark:text-white">
@@ -501,27 +522,6 @@ export default function Exam() {
       {label}
     </button>
   );
-
-  // A paper addressed by id is not there on first render; showing the sample
-  // paper for a beat would be worse than showing nothing.
-  if (paperLoading) {
-    return (
-      <div className="flex h-screen items-center justify-center bg-gray-50 dark:bg-[#0B0B0F] text-gray-600 dark:text-gray-400">
-        Loading paper…
-      </div>
-    );
-  }
-
-  if (paperId && !loaded && !isPreview) {
-    return (
-      <div className="flex h-screen flex-col items-center justify-center gap-3 bg-gray-50 dark:bg-[#0B0B0F] text-gray-600 dark:text-gray-400">
-        <p>That paper is not available.</p>
-        <Link to={`/${slug}/${courseSlug}`} className="underline underline-offset-2">
-          Back to the course
-        </Link>
-      </div>
-    );
-  }
 
   return (
     <div className="h-screen w-full flex flex-col overflow-hidden bg-gray-50 dark:bg-[#0B0B0F] text-gray-900 dark:text-white">
