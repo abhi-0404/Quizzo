@@ -41,9 +41,10 @@ positional alignment between the two pdf.js streams is required.
 
 `#008000` = correct, `#ff0000` = incorrect.
 
-Measured on `samples/IIT M DEGREE AN EXAM QDB2 26 Oct 2025.pdf`: **798/798 options
-classified, 0 disagreements** against an independent PyMuPDF extraction, 143 pages in
-~850 ms.
+Measured on one paper — `IIT M DEGREE AN EXAM QDB2 26 Oct 2025.pdf`, 143 pages:
+**798/798 options classified, 0 disagreements** against an independent PyMuPDF
+extraction, in ~850 ms. `samples/` is gitignored, so re-deriving that number means
+putting that PDF back and running the integration test.
 
 ## Document structure
 
@@ -210,9 +211,12 @@ inserted but not yet published.
 
 ## Verification
 
-- **100 tests.** The two that matter most run against real extractions: two exam
-  codes of one cohort collapse to a single paper, and two cohorts of the same
-  course do not.
+- **102 tests — 100 passing, 2 skipped.** The two that matter most run against real
+  extractions: two exam codes of one cohort collapse to a single paper, and two
+  cohorts of the same course do not. A third asserts every merged paper's
+  `sourceFileIndex` resolves to a file that really contains its heading — that index
+  is what the importer crops figures from, so a wrong one would pull them from
+  another PDF silently. The 2 skipped are the PDF-backed integration test below.
 - **Publish path** is exercised against a stand-in Supabase client — upsert keys,
   publish-after-questions ordering, comprehension expansion, figure dedup.
 - **Browser run** against the dev server: every student page degrades to an
@@ -234,7 +238,10 @@ policies and the live publish are written but unrun until the schema is applied.
    The old `admin@quizzo` / `123` bypass is gone — it never created a session, so
    `auth.uid()` was null and admin-only RLS could never have worked.
 3. **Set real credentials** in `.env` (`VITE_SUPABASE_URL`,
-   `VITE_SUPABASE_PUBLISHABLE_KEY`).
+   `VITE_SUPABASE_PUBLISHABLE_KEY`) — copy `.env.example`. This is not optional even
+   for a look around: `createClient()` throws on undefined values at module load, so
+   without them the app renders a blank page rather than degrading. Every student page
+   now queries Supabase on mount.
 4. **Import a sitting**: `/admin/create` → *Import PYQ PDF* → select every PDF for
    one exam date → confirm the exam type → map any unrecognised course headings →
    Publish.

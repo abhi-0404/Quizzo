@@ -207,6 +207,43 @@ describe("mergeSitting", () => {
     expect(headingsOf(merged)).toEqual(["maths2"]);
   });
 
+  it("points every paper at a file that really contains its heading", () => {
+    /* `sourceFileIndex` is what the importer uses to crop figures: it looks the
+       course up by heading inside `inputs[sourceFileIndex]`. If the index and
+       the heading ever disagreed, figures would be cropped from the wrong PDF —
+       silently, since every PDF has pages at those coordinates. */
+    const inputs = [
+      input("IIT M DEGREE AN EXAM QDB2 13 July 2025.pdf", "Deep Learning", slice("quiz1-qdb2").questions),
+      input("IIT M DIPLOMA FN EXAM QDD1 31 Aug 2025.pdf", "AI", slice("et-diploma-qdd1").questions),
+      input("IIT M DEGREE FN EXAM QDB1 31 Aug 2025.pdf", "AI", slice("et-degree-qdb1").questions),
+    ];
+    const merged = mergeSitting(inputs);
+
+    expect(merged.papers.length).toBeGreaterThan(0);
+    for (const paper of merged.papers) {
+      const source = inputs[paper.sourceFileIndex];
+      expect(source).toBeDefined();
+      expect(source.paper.courses.some((c) => c.name === paper.sourceHeading)).toBe(true);
+      // And the file it points at is the cohort the paper claims to be from.
+      expect(source.file.programme).toBe(paper.programme);
+    }
+  });
+
+  it("keeps the first file's index when a later code is deduped into it", () => {
+    const inputs = [
+      input("IIT M DEGREE AN EXAM QDB2 13 July 2025.pdf", "Deep Learning", slice("quiz1-qdb2").questions),
+      input("IIT M DEGREE AN EXAM QDB3 13 July 2025.pdf", "Deep Learning", slice("quiz1-qdb3").questions),
+    ];
+    const merged = mergeSitting(inputs);
+
+    expect(merged.papers).toHaveLength(1);
+    expect(merged.papers[0].sourceFileIndex).toBe(0);
+    // The surviving index must still resolve, which is the property that keeps
+    // figure cropping correct after a dedup.
+    const source = inputs[merged.papers[0].sourceFileIndex];
+    expect(source.paper.courses.some((c) => c.name === merged.papers[0].sourceHeading)).toBe(true);
+  });
+
   it("reports every date present so a mixed batch can be rejected", () => {
     const qs = slice("quiz1-qdb2").questions;
     const inputs = [
