@@ -133,8 +133,6 @@ quizzo/
 │   │   └── use-toast.ts            # Imperative toast helper
 │   │
 │   ├── integrations/
-│   │   ├── lovable/
-│   │   │   └── index.ts           # Lovable cloud auth client (Google OAuth)
 │   │   └── supabase/
 │   │       ├── client.ts          # Supabase browser client
 │   │       └── types.ts           # Full auto-generated DB type tree
@@ -344,7 +342,7 @@ Five tabs inside the admin shell:
 **Methods:**
 - Email/password sign-up (min 6 chars)
 - Email/password sign-in
-- Google OAuth via `@lovable.dev/cloud-auth-js`
+- (Google OAuth removed for now — pending a direct Supabase OAuth integration)
 - Hardcoded admin bypass: `admin@quizzo` / `123` → sets `localStorage.quizzo_admin = "1"`, skips Supabase
 
 **Route Guard:**
@@ -678,9 +676,6 @@ All three values are available in your Supabase project dashboard under **Projec
 - **Database**: PostgreSQL via the auto-generated typed client in `src/integrations/supabase/`
 - **Storage**: `avatars` bucket for user profile pictures (upsert with cache-busting URL)
 - **RPC**: `get_team_members()` and `has_role()` server-side functions
-
-### Lovable Cloud Auth (`@lovable.dev/cloud-auth-js`)
-Provides the Google OAuth redirect in `src/integrations/lovable/index.ts`. Called from the Auth page's "Continue with Google" button.
 
 ### Three.js + React Three Fiber
 The `Logo3D` component renders an animated wireframe cube on the landing hero. It accepts theme-aware `bgHex` and `lineHex` colour props and updates on light/dark mode switches.
