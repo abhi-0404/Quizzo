@@ -123,14 +123,16 @@ export function AppSidebar() {
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
       className={cn(
-        // Only the *reserved* width changes with pinning — hover never affects it.
         "hidden md:block relative shrink-0 h-screen sticky top-0 transition-[width] duration-200 ease-out",
-        isPinned ? "w-52" : "w-14"
+        isPinned ? "w-52" : "w-14",
+        // When unpinned and hovered, raise the aside itself so the expanded
+        // inner panel floats over the main content instead of going under it.
+        !isPinned && isHovered && "z-50"
       )}
     >
       <div
         className={cn(
-          "absolute inset-y-0 left-0 z-50 flex flex-col overflow-hidden",
+          "absolute inset-y-0 left-0 flex flex-col overflow-hidden",
           "bg-sidebar border-r border-sidebar-border transition-[width] duration-200 ease-out",
           expanded ? "w-52" : "w-14"
         )}

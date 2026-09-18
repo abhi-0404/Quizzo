@@ -6,6 +6,7 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { ThemeProvider } from "next-themes";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
+import { PendingAttemptSync } from "@/components/PendingAttemptSync";
 import { useGhostScrollbar } from "@/hooks/use-ghost-scrollbar";
 import Auth from "./pages/Auth";
 import Index from "./pages/Index";
@@ -21,6 +22,8 @@ import CourseDetail from "./pages/CourseDetail";
 import Profile from "./pages/Profile";
 import Exam from "./pages/Exam";
 import ExamReport from "./pages/ExamReport";
+import DevPyqLab from "./pages/DevPyqLab";
+import DevPyqImportLab from "./pages/DevPyqImportLab";
 
 
 const queryClient = new QueryClient();
@@ -35,6 +38,7 @@ const App = () => {
         <Sonner />
         <BrowserRouter>
           <AuthProvider>
+            <PendingAttemptSync />
             <Routes>
               <Route path="/auth" element={<Auth />} />
               <Route path="/" element={<Index />} />
@@ -49,6 +53,11 @@ const App = () => {
               <Route path="/:slug/:courseSlug/report" element={<ExamReport />} />
               <Route path="/:slug/:courseSlug" element={<CourseDetail />} />
               <Route path="/:slug" element={<Degree />} />
+
+              {/* Extraction lab. Dev builds only — it runs the importer without
+                  the admin gate, so it must never exist in production. */}
+              {import.meta.env.DEV && <Route path="/dev/pyq" element={<DevPyqLab />} />}
+              {import.meta.env.DEV && <Route path="/dev/pyq-import" element={<DevPyqImportLab />} />}
 
               <Route path="*" element={<NotFound />} />
             </Routes>

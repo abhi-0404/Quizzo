@@ -356,7 +356,7 @@ const Landing = () => {
             Your next exam isn't going to prepare itself.
           </h2>
           <p className="mt-5 text-[15px] text-muted-foreground max-w-[400px] mx-auto">
-            Pick a subject, start a paper, and find out where you actually stand.<br />No sign-up needed to begin.
+            Pick a subject, start a paper, and find out where you actually stand.
           </p>
           <div className="mt-10 flex justify-center">
             <Link to="/auth">
