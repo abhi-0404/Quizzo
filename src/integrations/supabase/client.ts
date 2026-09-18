@@ -2,8 +2,8 @@
 import { createClient } from '@supabase/supabase-js';
 import type { Database } from './types';
 
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
-const SUPABASE_PUBLISHABLE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL ?? "";
+const SUPABASE_PUBLISHABLE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ?? "";
 
 
 function isNewSupabaseApiKey(value: string): boolean {
@@ -41,5 +41,12 @@ export const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABL
     storage: localStorage,
     persistSession: true,
     autoRefreshToken: true,
+    // Supabase's hosted Auth server issues a `?code=` redirect for OAuth
+    // (e.g. Google) regardless of this setting. The client library's own
+    // default is 'implicit', which makes it reject that redirect with
+    // "Not a valid implicit grant flow url" — silently, during its own
+    // startup, before any of our code runs — so the session is just never
+    // created and the UI stays signed out with no visible error.
+    flowType: 'pkce',
   }
 });

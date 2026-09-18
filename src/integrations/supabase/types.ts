@@ -551,6 +551,7 @@ export type Database = {
           course_id: string
           created_at: string
           duration_minutes: number
+          exam_code: string
           id: string
           programme: Database["public"]["Enums"]["exam_programme"]
           published: boolean
@@ -567,6 +568,7 @@ export type Database = {
           course_id: string
           created_at?: string
           duration_minutes?: number
+          exam_code?: string
           id?: string
           programme: Database["public"]["Enums"]["exam_programme"]
           published?: boolean
@@ -583,6 +585,7 @@ export type Database = {
           course_id?: string
           created_at?: string
           duration_minutes?: number
+          exam_code?: string
           id?: string
           programme?: Database["public"]["Enums"]["exam_programme"]
           published?: boolean
