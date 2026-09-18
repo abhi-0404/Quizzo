@@ -193,8 +193,18 @@ function UniversalRendererImpl({ content, className = "", assets }: UniversalRen
             /* Figures are cropped with a transparent background so they sit on
                the page colour instead of a white block. That leaves dark ink
                invisible on the dark theme, so it is inverted there — with the
-               hue rotated back, which keeps coloured plots recognisable. */
-            className="my-2 max-w-full dark:invert dark:hue-rotate-180"
+               hue rotated back, which keeps coloured plots recognisable.
+               `max-w-full` alone only stops it overflowing the column — a
+               crop taken at a high render scale for sharpness has a large
+               *intrinsic* pixel size, so "capped at 100% of a wide column"
+               still meant filling that column edge to edge. Capped at a fixed
+               width instead (down to 100% on a narrower column, via `min()`)
+               — 640px, wide enough for a genuine multi-line stem paragraph
+               to stay readable at its own text size, not so wide it fills
+               the column edge to edge. A short inline expression inside an
+               option is capped much tighter than this by `.option-figure-scale`
+               (in index.css), since it's meant to read as a line of text. */
+            className="my-2 max-w-[min(640px,100%)] max-h-[420px] w-auto object-contain dark:invert dark:hue-rotate-180"
           />
         );
       },

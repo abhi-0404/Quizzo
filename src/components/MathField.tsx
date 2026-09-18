@@ -1,24 +1,28 @@
 import { useCallback, useEffect, useRef } from "react";
 import katex from "katex";
 import { tokenizeMath } from "@/components/MathText";
+import type { QuestionAsset } from "@/data/questions";
 
 /**
- * WYSIWYG field for text that may contain LaTeX math.
+ * WYSIWYG field for text that may contain LaTeX math and figure references.
  *
  * How it works
  * ------------
  * KaTeX is a one-way renderer (LaTeX → HTML), so rendered math cannot be
- * "typed into" and read back. Real editors solve this with *atomic* math nodes,
- * and so do we:
+ * "typed into" and read back, and a figure is a `data:` URL with nothing to
+ * type at all. Real editors solve this with *atomic* nodes, and so do we:
  *
- *   • prose   → ordinary editable text inside a contentEditable
- *   • `$…$`   → an atom: `contenteditable="false"`, rendered by KaTeX, carrying
- *               its own source on `data-src`
+ *   • prose            → ordinary editable text inside a contentEditable
+ *   • `$…$`            → an atom: `contenteditable="false"`, rendered by
+ *                         KaTeX, carrying its own source on `data-raw`
+ *   • `![alt](asset-…)` → an atom the same way, rendered as the actual
+ *                         cropped figure instead of the literal markdown
  *
- * Typing anywhere in the prose works natively. Clicking an atom swaps it back to
- * its raw `$…$` text so it can be edited as text; it re-renders on blur. The DOM
- * is serialised back to a single raw string on every input, so the caller's
- * state is always the source of truth.
+ * Typing anywhere in the prose works natively. Clicking an atom swaps it back
+ * to its raw source (`$…$` or `![alt](asset-…)`) so it can be edited as text;
+ * it re-renders on blur. The DOM is serialised back to a single raw string on
+ * every input, so the caller's state is always the source of truth — the same
+ * string the LaTeX View edits directly.
  *
  * The element is deliberately *not* re-rendered from props while the user types
  * (that would reset the caret); it re-syncs only when `value` changes from
@@ -34,18 +38,32 @@ interface MathFieldProps {
   className?: string;
   ariaLabel?: string;
   id?: string;
+  /** Figures this field's `![alt](asset-<id>)` references may resolve against. */
+  assets?: QuestionAsset[];
 }
 
 const escapeHtml = (s: string) =>
   s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
 /** Build the editable DOM: escaped prose plus non-editable rendered atoms. */
-function toHtml(value: string): string {
+function toHtml(value: string, assets: QuestionAsset[]): string {
   if (!value) return "";
   return tokenizeMath(value)
     .map((t) => {
       if (t.kind === "text") {
         return escapeHtml(t.value).replace(/\n/g, "<br>");
+      }
+      if (t.kind === "image") {
+        const raw = `![${t.alt}](asset-${t.assetId})`;
+        const rawAttr = escapeHtml(raw).replace(/"/g, "&quot;");
+        const asset = assets.find((a) => a.id === t.assetId);
+        if (!asset) {
+          // Nothing to resolve against — show the raw markdown rather than
+          // silently dropping content the caller may still fix later.
+          return `<span class="math-atom" contenteditable="false" data-raw="${rawAttr}" title="Click to edit">${escapeHtml(raw)}</span>`;
+        }
+        const alt = escapeHtml(t.alt || asset.alt).replace(/"/g, "&quot;");
+        return `<span class="math-atom math-atom-image" contenteditable="false" data-raw="${rawAttr}" title="Click to edit figure reference"><img src="${asset.src}" alt="${alt}" /></span>`;
       }
       let inner: string;
       try {
@@ -58,9 +76,9 @@ function toHtml(value: string): string {
       } catch {
         inner = escapeHtml(`$${t.value}$`);
       }
-      const src = escapeHtml(t.value).replace(/"/g, "&quot;");
       const delim = t.display ? "$$" : "$";
-      return `<span class="math-atom" contenteditable="false" data-src="${src}" data-delim="${delim}" title="Click to edit LaTeX">${inner}</span>`;
+      const rawAttr = escapeHtml(`${delim}${t.value}${delim}`).replace(/"/g, "&quot;");
+      return `<span class="math-atom" contenteditable="false" data-raw="${rawAttr}" title="Click to edit LaTeX">${inner}</span>`;
     })
     .join("");
 }
@@ -76,9 +94,8 @@ function fromDom(root: HTMLElement): string {
     if (node.nodeType !== Node.ELEMENT_NODE) return;
     const el = node as HTMLElement;
 
-    if (el.dataset.src !== undefined) {
-      const d = el.dataset.delim || "$";
-      out += `${d}${el.dataset.src}${d}`;
+    if (el.dataset.raw !== undefined) {
+      out += el.dataset.raw;
       return;
     }
     if (el.tagName === "BR") {
@@ -96,7 +113,7 @@ function fromDom(root: HTMLElement): string {
 }
 
 export function MathField({
-  value, onChange, placeholder, multiline = false, className = "", ariaLabel, id,
+  value, onChange, placeholder, multiline = false, className = "", ariaLabel, id, assets = [],
 }: MathFieldProps) {
   const ref = useRef<HTMLDivElement | null>(null);
   /** Last value this component put into, or read out of, the DOM. */
@@ -104,9 +121,9 @@ export function MathField({
 
   const render = useCallback(() => {
     if (!ref.current) return;
-    ref.current.innerHTML = toHtml(value);
+    ref.current.innerHTML = toHtml(value, assets);
     synced.current = value;
-  }, [value]);
+  }, [value, assets]);
 
   // Re-render only for changes that did not originate from typing here.
   useEffect(() => {
@@ -120,13 +137,12 @@ export function MathField({
     onChange(next);
   }, [onChange]);
 
-  /** Clicking rendered math reveals its source inline for editing. */
+  /** Clicking a rendered atom (math or figure) reveals its source inline for editing. */
   const handleMouseDown = (e: React.MouseEvent) => {
     const atom = (e.target as HTMLElement)?.closest?.(".math-atom") as HTMLElement | null;
     if (!atom || !ref.current) return;
     e.preventDefault();
-    const delim = atom.dataset.delim || "$";
-    const text = document.createTextNode(`${delim}${atom.dataset.src ?? ""}${delim}`);
+    const text = document.createTextNode(atom.dataset.raw ?? "");
     atom.replaceWith(text);
 
     const sel = window.getSelection();
@@ -156,6 +172,13 @@ export function MathField({
     render();
   };
 
+  // Whether the placeholder shows is driven from React state, not from a
+  // `:empty`/`:has()` CSS match against the imperatively-written DOM — that
+  // structural check could flash both the placeholder and real content at
+  // once (the placeholder pseudo-element painting before a mutation observer
+  // catches up). Deriving it from `value` itself is unambiguous.
+  const isEmpty = value.trim().length === 0;
+
   return (
     <div
       id={id}
@@ -172,7 +195,7 @@ export function MathField({
       onKeyDown={handleKeyDown}
       onPaste={handlePaste}
       onBlur={handleBlur}
-      className={`math-field w-full rounded-md border border-border bg-card px-3 py-2 text-[13px] text-foreground focus:outline-none focus:border-gray-400 dark:focus:border-gray-600 transition-colors ${className}`}
+      className={`math-field ${isEmpty ? "is-empty" : ""} w-full rounded-md border border-border bg-card px-3 py-2 text-[13px] text-foreground focus:outline-none focus:border-gray-400 dark:focus:border-gray-600 transition-colors ${className}`}
     />
   );
 }

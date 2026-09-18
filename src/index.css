@@ -147,6 +147,141 @@
 }
 
 /* ---------------------------------------------------------------------------
+   Per-section theme preview — lets one subject's content be forced light or
+   dark regardless of the app's actual global theme, so an admin can check
+   how a paper reads in both without switching the whole site. Re-declaring
+   the custom properties here always wins over an inherited `.dark` ancestor
+   (a descendant re-declaration, not a specificity fight), but the `dark:`
+   utility classes on figures are keyed off `.dark`'s mere *presence* as an
+   ancestor, which a nested class can't undo on its own — those need an
+   explicit, higher-priority override alongside the variables.
+--------------------------------------------------------------------------- */
+.theme-scope-light {
+  color-scheme: light;
+  --background: 210 20% 98%;
+  --foreground: 221 39% 11%;
+  --card: 0 0% 100%;
+  --card-foreground: 221 39% 11%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 221 39% 11%;
+  --primary: 234 55% 58%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 220 14% 96%;
+  --secondary-foreground: 221 39% 11%;
+  --muted: 220 14% 96%;
+  --muted-foreground: 220 9% 46%;
+  --accent: 220 14% 96%;
+  --accent-foreground: 221 39% 11%;
+  --destructive: 345 72% 51%;
+  --destructive-foreground: 0 0% 100%;
+  --success: 142 70% 40%;
+  --success-foreground: 0 0% 100%;
+  --warning: 38 92% 50%;
+  --warning-foreground: 0 0% 100%;
+  --info: 199 89% 48%;
+  --info-foreground: 0 0% 100%;
+  --border: 220 13% 91%;
+  --input: 216 12% 84%;
+  --ring: 234 55% 58%;
+  background-color: hsl(var(--background));
+  /* The custom properties above are only half of it. `color` is inherited as
+     an already-*resolved* value, not a live reference to `--foreground` — a
+     descendant with no colour class of its own (most plain text in this app)
+     was still showing whatever `--foreground` resolved to on the real body
+     (the dark theme's near-white), because nothing between it and body ever
+     recomputed `color` against the redeclared variable. Setting it here,
+     once, is what actually makes that redeclaration reach that text. */
+  color: hsl(var(--foreground)) !important;
+}
+
+.theme-scope-dark {
+  color-scheme: dark;
+  --background: 240 6% 6%;
+  --foreground: 0 0% 90%;
+  --card: 240 5% 9%;
+  --card-foreground: 0 0% 90%;
+  --popover: 240 5% 9%;
+  --popover-foreground: 0 0% 90%;
+  --primary: 234 55% 60%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 240 4% 14%;
+  --secondary-foreground: 0 0% 90%;
+  --muted: 240 4% 14%;
+  --muted-foreground: 0 0% 50%;
+  --accent: 240 4% 14%;
+  --accent-foreground: 0 0% 90%;
+  --destructive: 345 90% 60%;
+  --destructive-foreground: 0 0% 100%;
+  --success: 145 100% 50%;
+  --success-foreground: 0 0% 100%;
+  --warning: 38 100% 55%;
+  --warning-foreground: 0 0% 100%;
+  --info: 199 100% 55%;
+  --info-foreground: 0 0% 100%;
+  --border: 240 4% 26%;
+  --input: 240 4% 26%;
+  --ring: 234 55% 60%;
+  background-color: hsl(var(--background));
+  color: hsl(var(--foreground)) !important;
+}
+
+/* Figures are inverted for legibility in dark mode via `.dark`-gated Tailwind
+   classes or a `.dark`-prefixed selector — neither reacts to a nested scope
+   class, so the two figure paths (UniversalRenderer/thumbnail `<img>`s, and
+   MathField's own atom images) are corrected explicitly, at higher priority
+   than either source. */
+.theme-scope-light img.dark\:invert {
+  filter: none !important;
+}
+.theme-scope-dark img.dark\:invert {
+  filter: invert(1) hue-rotate(180deg) !important;
+}
+.theme-scope-light .math-field .math-atom-image img {
+  filter: none !important;
+}
+.theme-scope-dark .math-field .math-atom-image img {
+  filter: invert(1) hue-rotate(180deg) !important;
+}
+
+/* Every other `dark:`-prefixed literal-colour utility reachable inside a
+   section's preview — badges, the Show/Hide PDF button, the correct-answer
+   highlight — is gated on `.dark` ancestor *presence*, the same as figures
+   above, and just as unmoved by a scope class on its own. First pass at this
+   only handled figures, which is why everything else still rendered as if
+   the real (dark) theme were active even while "previewing light". */
+.theme-scope-light .dark\:bg-gray-100 { background-color: rgb(17 24 39) !important; }
+.theme-scope-light .dark\:text-black { color: rgb(255 255 255) !important; }
+.theme-scope-dark .dark\:bg-gray-100 { background-color: rgb(243 244 246) !important; }
+.theme-scope-dark .dark\:text-black { color: rgb(0 0 0) !important; }
+
+.theme-scope-light .dark\:border-red-900 { border-color: rgb(254 202 202) !important; }
+.theme-scope-light .dark\:bg-\[\#1A0F0F\] { background-color: rgb(254 242 242) !important; }
+.theme-scope-light .dark\:text-red-400 { color: rgb(220 38 38) !important; }
+.theme-scope-dark .dark\:border-red-900 { border-color: rgb(127 29 29) !important; }
+.theme-scope-dark .dark\:bg-\[\#1A0F0F\] { background-color: #1A0F0F !important; }
+.theme-scope-dark .dark\:text-red-400 { color: rgb(248 113 113) !important; }
+
+.theme-scope-light .dark\:border-amber-900 { border-color: rgb(252 211 77) !important; }
+.theme-scope-light .dark\:bg-\[\#1E1707\] { background-color: rgb(255 251 235) !important; }
+.theme-scope-light .dark\:text-amber-400 { color: rgb(180 83 9) !important; }
+.theme-scope-dark .dark\:border-amber-900 { border-color: rgb(120 53 15) !important; }
+.theme-scope-dark .dark\:bg-\[\#1E1707\] { background-color: #1E1707 !important; }
+.theme-scope-dark .dark\:text-amber-400 { color: rgb(251 191 36) !important; }
+
+.theme-scope-light .dark\:text-emerald-500 { color: rgb(5 150 105) !important; }
+.theme-scope-dark .dark\:text-emerald-500 { color: rgb(16 185 129) !important; }
+
+/* The correct-answer highlight specifically: no filled box in the light
+   preview, but the same green border the dark preview shows — only the fill
+   goes away, not the outline that actually marks the row as correct. */
+.theme-scope-light .dark\:bg-\[\#0F1A14\] {
+  background-color: transparent !important;
+}
+.theme-scope-light .dark\:text-emerald-300 { color: rgb(4 120 87) !important; }
+.theme-scope-dark .dark\:bg-\[\#0F1A14\] { background-color: #0F1A14 !important; }
+.theme-scope-dark .dark\:text-emerald-300 { color: rgb(110 231 183) !important; }
+
+/* ---------------------------------------------------------------------------
    Ghost scrollbar — global custom overlay scrollbar
    Transparent track (blends into any background), thin rounded pill thumb,
    hidden by default and only visible while actively scrolling (body.is-scrolling,
@@ -211,8 +346,11 @@ body.is-scrolling * {
 /* ---------------------------------------------------------------------------
    WYSIWYG math field — rendered math sits inline as non-editable atoms.
 --------------------------------------------------------------------------- */
-.math-field:empty::before,
-.math-field:has(> br:only-child)::before {
+/* `.is-empty` is set from React state (value === ""), not sensed from DOM
+   structure — a `:empty`/`:has()` match against this field's imperatively
+   written innerHTML could paint the placeholder at the same time as real
+   content once actual text was present. */
+.math-field.is-empty::before {
   content: attr(data-placeholder);
   color: hsl(var(--muted-foreground));
   pointer-events: none;
@@ -234,6 +372,48 @@ body.is-scrolling * {
 
 .math-field .math-atom:hover {
   background-color: hsl(var(--secondary));
+}
+
+/* A figure atom reads as a block, not an inline chip — the underlying
+   markdown reference is still a single atomic unit, just a bigger one. */
+.math-field .math-atom-image {
+  display: block;
+  max-width: 100%;
+  margin: 6px 0;
+  padding: 0;
+}
+
+.math-field .math-atom-image img {
+  display: block;
+  /* Same reasoning and same value as UniversalRenderer's figure cap: "100%
+     of the column" alone still meant edge-to-edge at this crop's own large
+     intrinsic pixel size — capped to a fixed width (falling back to 100% on
+     a narrower column) instead, wide enough for a genuine multi-line stem. */
+  max-width: min(640px, 100%);
+  max-height: 420px;
+  width: auto;
+  object-fit: contain;
+  border-radius: 4px;
+}
+
+/* Figures are cropped with a transparent background, so dark ink is
+   invisible on the dark theme — inverted here the same way UniversalRenderer
+   inverts them for read-only display, hue rotated back so coloured plots
+   still read correctly. */
+.dark .math-field .math-atom-image img {
+  filter: invert(1) hue-rotate(180deg);
+}
+
+/* An option that is itself a figure (rather than plain text) was rendering
+   at the same generous size as a full question diagram — legible, but far
+   larger than an option row's own text, which read as "zoomed in". Capped
+   relative to the surrounding font size instead of a fixed pixel height, so
+   it sits at roughly the height of the text line it's replacing. */
+.option-figure-scale img {
+  max-height: 2em !important;
+  width: auto !important;
+  margin: 0 !important;
+  vertical-align: middle;
 }
 
 /* Named handle for the ghost scrollbar. The rules above already apply globally
@@ -273,4 +453,19 @@ body.is-scrolling .ghost-scroll::-webkit-scrollbar-thumb {
 
 body.is-scrolling .ghost-scroll {
   scrollbar-color: rgba(120, 120, 130, 0.5) transparent;
+}
+
+/* ---------------------------------------------------------------------------
+   KaTeX display math — a matrix or a stack of fractions renders at its own
+   internal scale regardless of the surrounding text, and at this app's 13px
+   body size that reads as noticeably larger than everything around it.
+   Trimmed down and allowed to scroll sideways rather than force the column
+   wider, the same way a wide table already does.
+--------------------------------------------------------------------------- */
+.katex-display {
+  margin: 0.6em 0;
+  padding-bottom: 2px;
+  font-size: 0.95em;
+  overflow-x: auto;
+  overflow-y: hidden;
 }
