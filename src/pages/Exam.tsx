@@ -8,6 +8,7 @@ import { useQuery } from "@tanstack/react-query";
 import { loadPreviewPaper } from "@/data/preview-paper";
 import { loadPaper, saveAttempt, type LoadedQuestion } from "@/lib/pyq-read";
 import { gradeAnswer } from "@/lib/grade";
+import { savePendingAttempt } from "@/lib/pending-attempt";
 import { useAuth } from "@/contexts/AuthContext";
 import { UniversalRenderer } from "@/components/UniversalRenderer";
 import type { QuestionAsset } from "@/data/questions";
@@ -233,9 +234,20 @@ export default function Exam() {
     });
 
     if (!user) {
-      // Signed-out students can still sit a paper; there is nowhere to store it.
-      toast.info("Sign in to save your attempt");
-      navigate(`/${slug}/${courseSlug}/report?mode=${sessionMode}`);
+      // Signed-out students can still sit and finish a paper — grading needs
+      // no account. Only the save does, so the graded result is held until
+      // sign-in/sign-up produces a session, instead of being discarded here.
+      savePendingAttempt({
+        paperId: loaded.paper.id,
+        mode: sessionMode,
+        durationSeconds: isPractice ? seconds : durationMinutes * 60 - seconds,
+        totalMarks: loaded.paper.totalMarks,
+        answers: graded,
+        slug,
+        courseSlug,
+      });
+      toast.info("Sign in or create an account to save your score");
+      navigate("/auth");
       return;
     }
 
@@ -517,10 +529,114 @@ export default function Exam() {
   const KeyBtn = ({ label, onClick, wide = false }: { label: React.ReactNode; onClick: () => void; wide?: boolean }) => (
     <button
       onClick={onClick}
-      className={`bg-gray-100 dark:bg-[#27272A] hover:bg-gray-200 dark:hover:bg-[#323238] text-gray-900 dark:text-white py-3 rounded-md font-medium text-lg transition-colors ${wide ? "col-span-3" : ""} flex items-center justify-center`}
+      className={`bg-gray-100 dark:bg-[#27272A] hover:bg-gray-200 dark:hover:bg-[#323238] text-gray-900 dark:text-white py-2 rounded-md font-medium text-sm transition-colors ${wide ? "col-span-3" : ""} flex items-center justify-center`}
     >
       {label}
     </button>
+  );
+
+  /* The question's own text and its answer control — split out so a
+     comprehension sub-question (which also has a passage) can lay this out
+     beside the passage instead of stacked under it, without duplicating any
+     of the per-type answer logic below. */
+  const questionEl = (
+    <>
+      <p className="text-lg leading-relaxed text-gray-900 dark:text-white mb-6"><UniversalRenderer content={q.text} assets={q.assets} /></p>
+
+      {q.type === "single" && (
+        <div className="space-y-1">
+          {q.options.map((opt, i) => {
+            const isSelected = selected === i;
+            return (
+              <label
+                key={i}
+                className="flex items-center gap-3 py-2 px-1 -mx-1 rounded-md cursor-pointer hover:bg-gray-50 dark:hover:bg-white/5 transition-colors"
+              >
+                <input
+                  type="radio"
+                  name={`q-${current}`}
+                  checked={isSelected}
+                  onChange={() => selectSingle(i)}
+                  className="shrink-0 self-center h-4 w-4 accent-emerald-600"
+                />
+                <span className="text-sm text-gray-900 dark:text-white"><UniversalRenderer content={opt} assets={q.assets} /></span>
+              </label>
+            );
+          })}
+        </div>
+      )}
+
+      {q.type === "multi" && (
+        <div className="space-y-1">
+          {q.options.map((opt, i) => {
+            const arr = (selected as number[] | undefined) ?? [];
+            const isSelected = arr.includes(i);
+            return (
+              <label
+                key={i}
+                className="flex items-center gap-3 py-2 px-1 -mx-1 rounded-md cursor-pointer hover:bg-gray-50 dark:hover:bg-white/5 transition-colors"
+              >
+                <input
+                  type="checkbox"
+                  checked={isSelected}
+                  onChange={() => toggleMulti(i)}
+                  className="shrink-0 self-center h-4 w-4 accent-emerald-600"
+                />
+                <span className="text-sm text-gray-900 dark:text-white"><UniversalRenderer content={opt} assets={q.assets} /></span>
+              </label>
+            );
+          })}
+        </div>
+      )}
+
+      {q.type === "comprehension" && (
+        <div className="space-y-1">
+          {q.options.map((opt, i) => {
+            const isSelected = selected === i;
+            return (
+              <label
+                key={i}
+                className="flex items-center gap-3 py-2 px-1 -mx-1 rounded-md cursor-pointer hover:bg-gray-50 dark:hover:bg-white/5 transition-colors"
+              >
+                <input
+                  type="radio"
+                  name={`q-${current}`}
+                  checked={isSelected}
+                  onChange={() => selectSingle(i)}
+                  className="shrink-0 self-center h-4 w-4 accent-emerald-600"
+                />
+                <span className="text-sm text-gray-900 dark:text-white"><UniversalRenderer content={opt} assets={q.assets} /></span>
+              </label>
+            );
+          })}
+        </div>
+      )}
+
+      {q.type === "integer" && (
+        <div className="mt-2">
+          <input
+            readOnly
+            value={(selected as string | undefined) ?? ""}
+            placeholder="Your answer"
+            className="text-lg text-center h-11 w-full max-w-[220px] mx-auto block bg-white dark:bg-[#16161D] border border-gray-300 dark:border-gray-700 rounded-lg text-gray-900 dark:text-white outline-none"
+          />
+          <div className="grid grid-cols-3 gap-1.5 w-full max-w-[220px] mx-auto mt-3">
+            {["1","2","3","4","5","6","7","8","9",".","0"].map((k) => (
+              <KeyBtn key={k} label={k} onClick={() => pressKey(k)} />
+            ))}
+            <KeyBtn label={<Delete className="h-4 w-4" />} onClick={() => pressKey("back")} />
+          </div>
+          <div className="w-full max-w-[220px] mx-auto mt-1.5">
+            <button
+              onClick={() => pressKey("clear")}
+              className="w-full bg-gray-100 dark:bg-[#27272A] hover:bg-gray-200 dark:hover:bg-[#323238] text-gray-900 dark:text-white py-1.5 rounded-md font-medium text-xs transition-colors"
+            >
+              Clear All
+            </button>
+          </div>
+        </div>
+      )}
+    </>
   );
 
   return (
@@ -609,129 +725,19 @@ export default function Exam() {
             </div>
 
             {/* A previewed comprehension keeps its child's real type (multi /
-                numerical), so key the passage off the passage itself. */}
-            {q.passage && (
-              <div className="max-h-48 overflow-y-auto bg-gray-100 dark:bg-[#1E1E24] p-4 rounded-lg border border-gray-200 dark:border-gray-800 mb-4 text-gray-800 dark:text-gray-200 whitespace-pre-line text-sm">
-                <UniversalRenderer content={q.passage} assets={q.assets} />
-              </div>
-            )}
-
-            <p className="text-lg leading-relaxed text-gray-900 dark:text-white mb-6"><UniversalRenderer content={q.text} assets={q.assets} /></p>
-
-            {q.type === "single" && (
-              <div className="space-y-3">
-                {q.options.map((opt, i) => {
-                  const isSelected = selected === i;
-                  return (
-                    <button
-                      key={i}
-                      onClick={() => selectSingle(i)}
-                      className={`w-full text-left bg-white dark:bg-[#16161D] border rounded-lg p-4 flex items-start gap-3 transition-colors ${
-                        isSelected
-                          ? "border-emerald-600 dark:border-emerald-500"
-                          : "border-gray-200 dark:border-gray-800 hover:border-gray-300 dark:hover:border-gray-700"
-                      }`}
-                    >
-                      <span
-                        className={`shrink-0 w-6 h-6 rounded-full border flex items-center justify-center text-xs font-medium ${
-                          isSelected
-                            ? "bg-emerald-600 border-emerald-600 text-white"
-                            : "border-gray-300 dark:border-gray-700 text-gray-600 dark:text-gray-400"
-                        }`}
-                      >
-                        {String.fromCharCode(65 + i)}
-                      </span>
-                      <span className="text-sm text-gray-900 dark:text-white"><UniversalRenderer content={opt} assets={q.assets} /></span>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-
-            {q.type === "multi" && (
-              <div className="space-y-3">
-                {q.options.map((opt, i) => {
-                  const arr = (selected as number[] | undefined) ?? [];
-                  const isSelected = arr.includes(i);
-                  return (
-                    <button
-                      key={i}
-                      onClick={() => toggleMulti(i)}
-                      className={`w-full text-left bg-white dark:bg-[#16161D] border rounded-lg p-4 flex items-start gap-3 transition-colors ${
-                        isSelected
-                          ? "border-emerald-600 dark:border-emerald-500"
-                          : "border-gray-200 dark:border-gray-800 hover:border-gray-300 dark:hover:border-gray-700"
-                      }`}
-                    >
-                      <span
-                        className={`shrink-0 w-6 h-6 rounded border flex items-center justify-center text-xs font-medium ${
-                          isSelected
-                            ? "bg-emerald-600 border-emerald-600 text-white"
-                            : "border-gray-300 dark:border-gray-700 text-gray-600 dark:text-gray-400"
-                        }`}
-                      >
-                        {isSelected ? "✓" : String.fromCharCode(65 + i)}
-                      </span>
-                      <span className="text-sm text-gray-900 dark:text-white"><UniversalRenderer content={opt} assets={q.assets} /></span>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-
-            {q.type === "comprehension" && (
-              <div className="space-y-3">
-                {q.options.map((opt, i) => {
-                  const isSelected = selected === i;
-                  return (
-                    <button
-                      key={i}
-                      onClick={() => selectSingle(i)}
-                      className={`w-full text-left bg-white dark:bg-[#16161D] border rounded-lg p-4 flex items-start gap-3 transition-colors ${
-                        isSelected
-                          ? "border-emerald-600 dark:border-emerald-500"
-                          : "border-gray-200 dark:border-gray-800 hover:border-gray-300 dark:hover:border-gray-700"
-                      }`}
-                    >
-                      <span
-                        className={`shrink-0 w-6 h-6 rounded-full border flex items-center justify-center text-xs font-medium ${
-                          isSelected
-                            ? "bg-emerald-600 border-emerald-600 text-white"
-                            : "border-gray-300 dark:border-gray-700 text-gray-600 dark:text-gray-400"
-                        }`}
-                      >
-                        {String.fromCharCode(65 + i)}
-                      </span>
-                      <span className="text-sm text-gray-900 dark:text-white"><UniversalRenderer content={opt} assets={q.assets} /></span>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-
-            {q.type === "integer" && (
-              <div className="mt-2">
-                <input
-                  readOnly
-                  value={(selected as string | undefined) ?? ""}
-                  placeholder="Your answer"
-                  className="text-2xl text-center h-16 w-full max-w-md mx-auto block bg-white dark:bg-[#16161D] border border-gray-300 dark:border-gray-700 rounded-lg text-gray-900 dark:text-white outline-none"
-                />
-                <div className="grid grid-cols-3 gap-2 w-full max-w-xs mx-auto mt-4">
-                  {["1","2","3","4","5","6","7","8","9",".","0"].map((k) => (
-                    <KeyBtn key={k} label={k} onClick={() => pressKey(k)} />
-                  ))}
-                  <KeyBtn label={<Delete className="h-5 w-5" />} onClick={() => pressKey("back")} />
+                numerical), so key the passage off the passage itself.
+                Side-by-side rather than stacked: a passage read once applies
+                to several sub-questions, so it stays put on the left while
+                only the right side changes as the student moves between them. */}
+            {q.passage ? (
+              <div className="flex flex-col lg:flex-row gap-4">
+                <div className="lg:w-1/2 lg:max-h-[65vh] overflow-y-auto bg-gray-100 dark:bg-[#1E1E24] p-4 rounded-lg border border-gray-200 dark:border-gray-800 text-gray-800 dark:text-gray-200 whitespace-pre-line text-sm">
+                  <UniversalRenderer content={q.passage} assets={q.assets} />
                 </div>
-                <div className="w-full max-w-xs mx-auto mt-2">
-                  <button
-                    onClick={() => pressKey("clear")}
-                    className="w-full bg-gray-100 dark:bg-[#27272A] hover:bg-gray-200 dark:hover:bg-[#323238] text-gray-900 dark:text-white py-3 rounded-md font-medium text-sm transition-colors"
-                  >
-                    Clear All
-                  </button>
-                </div>
+                <div className="lg:w-1/2 min-w-0">{questionEl}</div>
               </div>
+            ) : (
+              questionEl
             )}
             </div>
 
