@@ -12,8 +12,8 @@ interface AuthContextType {
   loading: boolean;
   /** True when the signed-in user holds the `admin` role in `user_roles`. */
   isAdmin: boolean;
-  signUp: (email: string, password: string, fullName: string) => Promise<void>;
-  signIn: (email: string, password: string) => Promise<void>;
+  /** True until the admin role check has resolved (separate from session loading). */
+  roleLoading: boolean;
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
 }
@@ -26,6 +26,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [roleLoading, setRoleLoading] = useState(true);
 
   const fetchProfile = async (userId: string) => {
     const { data } = await supabase
@@ -44,11 +45,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
    * UI can never believe it is an admin when the database disagrees.
    */
   const fetchRole = async (userId: string) => {
+    setRoleLoading(true);
     const { data, error } = await supabase.rpc("has_role", {
       _user_id: userId,
       _role: "admin",
     });
     setIsAdmin(!error && data === true);
+    setRoleLoading(false);
   };
 
   useEffect(() => {
@@ -66,6 +69,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         } else {
           setProfile(null);
           setIsAdmin(false);
+          setRoleLoading(false);
         }
         setLoading(false);
       }
@@ -77,29 +81,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (session?.user) {
         fetchProfile(session.user.id);
         fetchRole(session.user.id);
+      } else {
+        setRoleLoading(false);
       }
       setLoading(false);
     });
 
     return () => subscription.unsubscribe();
   }, []);
-
-  const signUp = async (email: string, password: string, fullName: string) => {
-    const { error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        data: { full_name: fullName },
-        emailRedirectTo: window.location.origin,
-      },
-    });
-    if (error) throw error;
-  };
-
-  const signIn = async (email: string, password: string) => {
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) throw error;
-  };
 
   const signOut = async () => {
     const { error } = await supabase.auth.signOut();
@@ -111,7 +100,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   return (
-    <AuthContext.Provider value={{ user, session, profile, loading, isAdmin, signUp, signIn, signOut, refreshProfile }}>
+    <AuthContext.Provider value={{ user, session, profile, loading, isAdmin, roleLoading, signOut, refreshProfile }}>
       {children}
     </AuthContext.Provider>
   );
