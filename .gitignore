@@ -57,8 +57,12 @@ supabase/.temp
 *.local
 .cache
 .turbo
+.claude
 
 # Source exam PDFs for the PYQ importer — multi-megabyte binaries kept out of
 # git. The parsed line stream is committed as a test fixture instead
 # (src/test/fixtures/), so the parser tests run without them.
 samples/
+
+# Local PYQ samples used by the dev extraction lab — never commit exam PDFs
+public/samples/
