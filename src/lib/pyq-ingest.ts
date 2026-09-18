@@ -43,6 +43,17 @@ const FILENAME =
   /(?:IIT\s*M\s+)?(DEGREE|DIPLOMA|FOUNDATION|IMPROVEMENT)\s+(FN|AN)\s+EXAM\s+([A-Z]{2,4}\d*)\s+(\d{1,2})\s+([A-Za-z]{3,9})\.?\s+(\d{4})/i;
 
 /**
+ * The cohort behind an exam code: "QDB1" and "QDB2" are the same sitting, only
+ * the trailing digit differs.
+ *
+ * Both the filename path and the manual path go through here, so they can never
+ * disagree about what counts as a family. An empty code has an empty family.
+ */
+function codeFamilyOf(code: string): string {
+  return code.replace(/\d+$/, "");
+}
+
+/**
  * Read the metadata out of a filename such as
  * `IIT M DEGREE FN EXAM QDB1 31 Aug 2025.pdf`.
  *
@@ -50,7 +61,20 @@ const FILENAME =
  * surfaces so the admin can fill the fields in by hand rather than guessing.
  */
 export function parsePaperFilename(filename: string): PaperFilename | null {
-  const m = filename.match(FILENAME);
+  return parsePaperMetaFromText(filename);
+}
+
+/**
+ * Reads the same `<programme> <slot> EXAM <code> <day> <month> <year>`
+ * convention out of *any* string — filename or otherwise. There is nothing
+ * filename-specific about the pattern itself (no extension is required, no
+ * anchor to the end of the string), which is what lets the importer try the
+ * PDF's own "Question Paper Name :" row first: that row is printed inside the
+ * document and survives however the uploaded file happens to be named,
+ * whereas the filename is whatever the admin's browser or OS called it.
+ */
+export function parsePaperMetaFromText(text: string): PaperFilename | null {
+  const m = text.match(FILENAME);
   if (!m) return null;
 
   const month = MONTHS[m[5].slice(0, 3).toLowerCase()];
@@ -64,9 +88,67 @@ export function parsePaperFilename(filename: string): PaperFilename | null {
     programme: m[1].toLowerCase() as Programme,
     slot: m[2].toLowerCase() as Slot,
     code,
-    // "QDB1" and "QDB2" are the same cohort; only the trailing digit differs.
-    codeFamily: code.replace(/\d+$/, ""),
+    codeFamily: codeFamilyOf(code),
     date: `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`,
+  };
+}
+
+/** Metadata an admin supplies when a filename carries none. */
+export interface ManualPaperMeta {
+  programme: Programme;
+  slot: Slot;
+  /** Exam code as printed, e.g. "QDB2". May be empty for a pre-split file. */
+  code: string;
+  /** ISO date, "YYYY-MM-DD". */
+  date: string;
+}
+
+const ISO_DATE = /^(\d{4})-(\d{2})-(\d{2})$/;
+
+const MONTH_LENGTHS = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+
+/** Counted by hand: `Date` remaps a two-digit year and rolls a bad day over. */
+function daysInMonth(year: number, month: number): number {
+  if (month !== 2) return MONTH_LENGTHS[month - 1];
+  const leap = (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
+  return leap ? 29 : 28;
+}
+
+/**
+ * True when a filename carries no usable metadata, so the admin must supply it.
+ *
+ * Users routinely split a master PDF into per-course files ("MLT.pdf",
+ * "Maths2.pdf"), which strips every field the convention encoded.
+ */
+export function needsManualMeta(filename: string): boolean {
+  return parsePaperFilename(filename) === null;
+}
+
+/**
+ * Build the same record `parsePaperFilename` returns, from fields typed in by
+ * hand.
+ *
+ * The date is rejected rather than coerced: a paper filed under the wrong
+ * sitting is silently wrong forever, and `Date` would happily read "2025-02-30"
+ * as 2 March.
+ */
+export function manualPaperFilename(meta: ManualPaperMeta): PaperFilename {
+  const m = meta.date.match(ISO_DATE);
+  if (!m) throw new Error(`Date must be YYYY-MM-DD, got "${meta.date}".`);
+
+  const [year, month, day] = [Number(m[1]), Number(m[2]), Number(m[3])];
+  if (month < 1 || month > 12 || day < 1 || day > daysInMonth(year, month)) {
+    throw new Error(`"${meta.date}" is not a real calendar date.`);
+  }
+
+  const code = meta.code.trim().toUpperCase();
+
+  return {
+    programme: meta.programme,
+    slot: meta.slot,
+    code,
+    codeFamily: codeFamilyOf(code),
+    date: `${m[1]}-${m[2]}-${m[3]}`,
   };
 }
 
@@ -196,9 +278,19 @@ export interface MergedPaper {
   questions: Question[];
   totalMarks: number;
   questionCount: number;
-  flagged: number;
   /** Index into the merge input, so figures are cropped from the right PDF. */
   sourceFileIndex: number;
+  /** 1-based page where this course's section heading appears in its source PDF. */
+  startPage: number;
+  /** 1-based PDF page of each entry in `questions`, same order, where known. */
+  questionPages: number[];
+  /**
+   * True when these questions preceded the first `Section Id :` row in their
+   * source PDF — the tail of whatever section came before, not this course
+   * (see parse-tcs-ion.ts's "Unattributed" course). Real content, but from an
+   * unknown, possibly unrelated, subject — callers should not pre-select it.
+   */
+  orphan: boolean;
 }
 
 export interface MergeInput {
@@ -265,8 +357,10 @@ export function mergeSitting(inputs: MergeInput[]): MergedSitting {
         questions: course.questions,
         totalMarks: marksOfPaper(course.questions),
         questionCount: countOfPaper(course.questions),
-        flagged: course.questions.filter((q) => !q.isValid).length,
         sourceFileIndex: fileIndex,
+        startPage: course.startPage,
+        questionPages: course.questionPages,
+        orphan: course.sectionId === "",
       });
     }
   }

@@ -98,6 +98,7 @@ export interface PaperSummary {
   totalMarks: number;
   questionCount: number;
   sourceCodes: string[];
+  examCode: string;
 }
 
 const EXAM_LABEL: Record<ExamType, string> = {
@@ -113,7 +114,7 @@ export async function listPapersForCourse(slug: string): Promise<PaperSummary[]>
   const { data, error } = await supabase
     .from("papers")
     .select(
-      "id, programme, slot, variant_label, duration_minutes, total_marks, question_count, source_codes, courses!inner(name, slug), sittings!inner(exam_date, exam_type, term, year)"
+      "id, programme, slot, variant_label, duration_minutes, total_marks, question_count, source_codes, exam_code, courses!inner(name, slug), sittings!inner(exam_date, exam_type, term, year)"
     )
     .eq("published", true)
     .eq("courses.slug", slug);
@@ -140,6 +141,7 @@ export async function listPapersForCourse(slug: string): Promise<PaperSummary[]>
       totalMarks: r.total_marks,
       questionCount: r.question_count,
       sourceCodes: r.source_codes ?? [],
+      examCode: r.exam_code ?? "",
     }))
     .sort((a, b) => b.examDate.localeCompare(a.examDate) || a.programme.localeCompare(b.programme));
 }
@@ -168,7 +170,7 @@ export async function loadPaper(paperId: string): Promise<LoadedPaper | null> {
   const { data: paperRow, error } = await supabase
     .from("papers")
     .select(
-      "id, programme, slot, variant_label, duration_minutes, total_marks, question_count, source_codes, courses!inner(name, slug), sittings!inner(exam_date, exam_type, term, year)"
+      "id, programme, slot, variant_label, duration_minutes, total_marks, question_count, source_codes, exam_code, courses!inner(name, slug), sittings!inner(exam_date, exam_type, term, year)"
     )
     .eq("id", paperId)
     .maybeSingle();
@@ -230,6 +232,7 @@ export async function loadPaper(paperId: string): Promise<LoadedPaper | null> {
       totalMarks: r.total_marks,
       questionCount: r.question_count,
       sourceCodes: r.source_codes ?? [],
+      examCode: r.exam_code ?? "",
     },
     questions,
   };

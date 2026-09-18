@@ -9,8 +9,10 @@ import {
   hashCoursePaper,
   headingsOf,
   inferExamType,
+  manualPaperFilename,
   marksOfPaper,
   mergeSitting,
+  needsManualMeta,
   normaliseCourseHeading,
   parsePaperFilename,
   sittingDateConflict,
@@ -69,6 +71,70 @@ describe("parsePaperFilename", () => {
   it("returns null rather than guessing at an unknown name", () => {
     expect(parsePaperFilename("some-random-paper.pdf")).toBeNull();
     expect(parsePaperFilename("IIT M DEGREE XX EXAM QDB1 31 Aug 2025.pdf")).toBeNull();
+  });
+});
+
+describe("needsManualMeta", () => {
+  it("accepts the names that follow the convention", () => {
+    expect(needsManualMeta("IIT M DEGREE FN EXAM QDB1 31 Aug 2025.pdf")).toBe(false);
+    expect(needsManualMeta("IIT M FOUNDATION AN EXAM QDF3 03 Aug 2025.pdf")).toBe(false);
+    expect(needsManualMeta("IIT M DEGREE AN EXAM QDB2 13 July 2025.pdf")).toBe(false);
+  });
+
+  it("asks for metadata on the per-course files a split produces", () => {
+    // What the Colab splitter actually writes, one file per course heading.
+    expect(needsManualMeta("MLT.pdf")).toBe(true);
+    expect(needsManualMeta("Maths2.pdf")).toBe(true);
+    expect(needsManualMeta("some-random-paper.pdf")).toBe(true);
+    expect(needsManualMeta("IIT M DEGREE XX EXAM QDB1 31 Aug 2025.pdf")).toBe(true);
+    expect(needsManualMeta("")).toBe(true);
+  });
+});
+
+describe("manualPaperFilename", () => {
+  it("produces exactly what the filename path produces", () => {
+    const parsed = parsePaperFilename("IIT M DEGREE FN EXAM QDB1 31 Aug 2025.pdf")!;
+    expect(
+      manualPaperFilename({ programme: "degree", slot: "fn", code: "QDB1", date: "2025-08-31" })
+    ).toEqual(parsed);
+
+    const foundation = parsePaperFilename("IIT M FOUNDATION AN EXAM QDF3 03 Aug 2025.pdf")!;
+    expect(
+      manualPaperFilename({ programme: "foundation", slot: "an", code: "QDF3", date: "2025-08-03" })
+    ).toEqual(foundation);
+  });
+
+  it("treats the trailing digit as a variant of one cohort code", () => {
+    const a = manualPaperFilename({ programme: "degree", slot: "fn", code: "QDB1", date: "2025-08-31" });
+    const b = manualPaperFilename({ programme: "degree", slot: "fn", code: "QDB12", date: "2025-08-31" });
+    expect(a.codeFamily).toBe("QDB");
+    expect(b.codeFamily).toBe("QDB");
+    expect(a.code).not.toBe(b.code);
+  });
+
+  it("allows a pre-split file to have no code at all", () => {
+    const meta = manualPaperFilename({ programme: "degree", slot: "fn", code: "", date: "2025-08-31" });
+    expect(meta.code).toBe("");
+    expect(meta.codeFamily).toBe("");
+    expect(meta.date).toBe("2025-08-31");
+  });
+
+  it("rejects a date rather than coercing it", () => {
+    const bad = ["2025-13-01", "2025-02-30", "not-a-date", "2025-1-1", "", "2025-00-10", "2025-08-00"];
+    for (const date of bad) {
+      expect(() =>
+        manualPaperFilename({ programme: "degree", slot: "fn", code: "QDB1", date })
+      ).toThrow();
+    }
+  });
+
+  it("keeps the real leap days that a hand-rolled check could lose", () => {
+    expect(
+      manualPaperFilename({ programme: "degree", slot: "fn", code: "QDB1", date: "2024-02-29" }).date
+    ).toBe("2024-02-29");
+    expect(() =>
+      manualPaperFilename({ programme: "degree", slot: "fn", code: "QDB1", date: "2025-02-29" })
+    ).toThrow();
   });
 });
 
@@ -146,7 +212,8 @@ describe("marksOfPaper / countOfPaper", () => {
 
 const asPaper = (name: string, questions: Question[]): TcsIonPaper => ({
   paperName: name,
-  courses: [{ name, sectionId: "s1", questions }],
+  contentPaperName: null,
+  courses: [{ name, sectionId: "s1", questions, startPage: 1, questionPages: questions.map(() => 1) }],
   regions: {},
   stats: { blocks: 0, declarations: 0, questions: questions.length, byType: {}, figures: 0, flagged: 0 },
 });
@@ -168,6 +235,31 @@ describe("mergeSitting", () => {
     expect(merged.stats.duplicates).toBe(1);
     expect(merged.stats.variants).toBe(0);
     expect(merged.papers[0].variantLabel).toBe("");
+  });
+
+  it("still dedupes two pre-split files that carry no exam code", () => {
+    /* Dedup is keyed on content, not on the code, so an empty code cannot break
+       it. All it costs is provenance: `sourceCodes` has nothing to record. */
+    const manual = (questions: Question[]): MergeInput => ({
+      file: manualPaperFilename({ programme: "degree", slot: "an", code: "", date: "2025-07-13" }),
+      paper: asPaper("Deep Learning", questions),
+    });
+    const merged = mergeSitting([
+      manual(slice("quiz1-qdb2").questions),
+      manual(slice("quiz1-qdb3").questions),
+    ]);
+
+    expect(merged.papers).toHaveLength(1);
+    expect(merged.papers[0].sourceCodes).toEqual([""]);
+    expect(merged.stats.duplicates).toBe(1);
+    expect(merged.stats.variants).toBe(0);
+  });
+
+  it("is not orphan when the source course has a real section id", () => {
+    const merged = mergeSitting([
+      input("IIT M DEGREE AN EXAM QDB2 13 July 2025.pdf", "Deep Learning", slice("quiz1-qdb2").questions),
+    ]);
+    expect(merged.papers[0].orphan).toBe(false);
   });
 
   it("keeps two cohorts as separate papers for the same course", () => {
@@ -242,6 +334,44 @@ describe("mergeSitting", () => {
     // figure cropping correct after a dedup.
     const source = inputs[merged.papers[0].sourceFileIndex];
     expect(source.paper.courses.some((c) => c.name === merged.papers[0].sourceHeading)).toBe(true);
+  });
+
+  it("marks a paper orphan iff its source course had no section id", () => {
+    // Mirrors what parse-tcs-ion.ts actually produces: an attributed course
+    // carries the real Section Id; content before the first section header
+    // comes back with sectionId "" (see its "Unattributed" course).
+    const qs = slice("quiz1-qdb2").questions;
+    const attributed: MergeInput = {
+      file: parsePaperFilename("IIT M DEGREE AN EXAM QDB2 13 July 2025.pdf")!,
+      paper: {
+        paperName: "p",
+        contentPaperName: null,
+        courses: [{ name: "Deep Learning", sectionId: "640653106278", questions: qs, startPage: 1, questionPages: qs.map(() => 1) }],
+        regions: {},
+        stats: { blocks: 0, declarations: 0, questions: qs.length, byType: {}, figures: 0, flagged: 0 },
+      },
+    };
+    const orphaned: MergeInput = {
+      file: parsePaperFilename("IIT M DEGREE FN EXAM QDB1 31 Aug 2025.pdf")!,
+      paper: {
+        paperName: "p",
+        contentPaperName: null,
+        courses: [{
+          name: "Unattributed — no section header in this PDF", sectionId: "",
+          questions: slice("et-degree-qdb1").questions, startPage: 1,
+          questionPages: slice("et-degree-qdb1").questions.map(() => 1),
+        }],
+        regions: {},
+        stats: { blocks: 0, declarations: 0, questions: 1, byType: {}, figures: 0, flagged: 0 },
+      },
+    };
+
+    const merged = mergeSitting([attributed, orphaned]);
+    expect(merged.papers).toHaveLength(2);
+
+    const byOrphan = new Map(merged.papers.map((p) => [p.orphan, p]));
+    expect(byOrphan.get(false)?.sourceHeading).toBe("Deep Learning");
+    expect(byOrphan.get(true)?.sourceHeading).toBe("Unattributed — no section header in this PDF");
   });
 
   it("reports every date present so a mixed batch can be rejected", () => {

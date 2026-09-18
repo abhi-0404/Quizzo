@@ -7,6 +7,7 @@ import {
   type TcsIonPaper,
 } from "@/lib/parse-tcs-ion";
 import { parseBulkPaper, serializeBlock } from "@/lib/parse-bulk-paper";
+import { parsePaperMetaFromText } from "@/lib/pyq-ingest";
 import type { PdfExtract } from "@/lib/pdf-extract";
 
 /**
@@ -50,6 +51,45 @@ describe("parseTcsIonPaper — course segmentation", () => {
 
   it("gives every course a section id", () => {
     for (const c of paper.courses) expect(c.sectionId).toMatch(/^\d+$/);
+  });
+});
+
+describe("parseTcsIonPaper — content-based metadata", () => {
+  it("reads the document's own Question Paper Name row", () => {
+    expect(paper.contentPaperName).toBe("IIT M DEGREE AN EXAM QDB2 26 Oct 2025");
+  });
+
+  it("that row carries the same convention parsePaperFilename expects from a filename", () => {
+    const meta = parsePaperMetaFromText(paper.contentPaperName!);
+    expect(meta).toEqual({
+      programme: "degree",
+      slot: "an",
+      code: "QDB2",
+      codeFamily: "QDB",
+      date: "2025-10-26",
+    });
+  });
+});
+
+describe("parseTcsIonPaper — page tracking", () => {
+  it("gives every course a 1-based start page", () => {
+    for (const c of paper.courses) {
+      expect(c.startPage).toBeGreaterThanOrEqual(1);
+    }
+  });
+
+  it("orders course start pages the same way the courses appear in the PDF", () => {
+    const pages = paper.courses.map((c) => c.startPage);
+    expect(pages).toEqual([...pages].sort((a, b) => a - b));
+  });
+
+  it("gives every question a page number no earlier than its own course's start page", () => {
+    for (const c of paper.courses) {
+      expect(c.questionPages).toHaveLength(c.questions.length);
+      for (const page of c.questionPages) {
+        expect(page).toBeGreaterThanOrEqual(c.startPage);
+      }
+    }
   });
 });
 

@@ -92,7 +92,7 @@ vi.mock("@/integrations/supabase/client", () => ({
   },
 }));
 
-const { publishSitting } = await import("@/lib/pyq-publish");
+const { publishSitting, publishAuthoredPaper } = await import("@/lib/pyq-publish");
 const { hashCoursePaper } = await import("@/lib/pyq-ingest");
 const { blankDraft, blankSubQuestion } = await import("@/data/questions");
 import type { Question } from "@/data/questions";
@@ -153,8 +153,10 @@ function sittingWith(questions: Question[]): MergedSitting {
         questions,
         totalMarks: 10,
         questionCount: questions.length,
-        flagged: 0,
         sourceFileIndex: 0,
+        startPage: 1,
+        questionPages: questions.map(() => 1),
+        orphan: false,
       },
     ],
     stats: { files: 2, duplicates: 1, variants: 0 },
@@ -176,6 +178,31 @@ beforeEach(() => {
 });
 
 describe("publishSitting", () => {
+  it("writes the admin's confirmed term instead of recomputing it from the date", async () => {
+    // 2025-08-31 falls in termForDate's own "May Term" bucket (month 8), so an
+    // admin who overrides it to "Jan Term" — their institution's real term
+    // boundaries can differ from the simple month-cutoff rule — has to see
+    // that override actually land in the write, not get silently replaced by
+    // upsertSitting recomputing it from the date behind their back.
+    await publishSitting({
+      sitting: sittingWith([mcq("one")]),
+      examType: "end_term",
+      term: "Jan Term",
+      courseByHeading: new Map([["ai", "course-1"]]),
+      selected: new Set(["ai"]),
+    });
+    const sitting = recorded.find((r) => r.table === "sittings" && r.op === "upsert");
+    const payload = sitting?.payload as Record<string, unknown>;
+    expect(payload.term).toBe("Jan Term");
+  });
+
+  it("falls back to the date-cutoff rule when no term is given", async () => {
+    await run([mcq("one")]); // sittingWith's date, 2025-08-31, has no explicit term
+    const sitting = recorded.find((r) => r.table === "sittings" && r.op === "upsert");
+    const payload = sitting?.payload as Record<string, unknown>;
+    expect(payload.term).toBe("May Term");
+  });
+
   it("keys the paper upsert on the migration's unique constraint", async () => {
     await run([mcq("one")]);
     const paper = recorded.find((r) => r.table === "papers" && r.op === "upsert");
@@ -183,6 +210,9 @@ describe("publishSitting", () => {
     const payload = paper?.payload as Record<string, unknown>;
     expect(payload.programme).toBe("degree");
     expect(payload.source_codes).toEqual(["QDB1", "QDB2"]);
+    // The scalar exam_code is the head of source_codes — the one code an
+    // admin actually searches/reads by, promoted from the full dedup list.
+    expect(payload.exam_code).toBe("QDB1");
     // End term is 90 minutes per course, a rule that is not in the PDF.
     expect(payload.duration_minutes).toBe(90);
     // It must start unpublished.
@@ -259,5 +289,59 @@ describe("publishSitting", () => {
     });
     const paper = recorded.find((r) => r.table === "papers" && r.op === "upsert");
     expect((paper?.payload as { duration_minutes: number }).duration_minutes).toBe(60);
+  });
+});
+
+describe("publishAuthoredPaper", () => {
+  it("writes the admin's typed exam code, and defaults to blank when none was given", async () => {
+    await publishAuthoredPaper({
+      subject: "AI",
+      level: "degree",
+      examDate: "2025-08-31",
+      examType: "quiz_1",
+      term: "May Term",
+      examCode: "QIV4",
+      questions: [mcq("one")],
+    });
+    const withCode = recorded.find((r) => r.table === "papers" && r.op === "upsert");
+    expect((withCode?.payload as { exam_code: string }).exam_code).toBe("QIV4");
+
+    recorded.length = 0;
+    await publishAuthoredPaper({
+      subject: "AI",
+      level: "degree",
+      examDate: "2025-08-31",
+      examType: "quiz_1",
+      term: "May Term",
+      questions: [mcq("one")],
+    });
+    const withoutCode = recorded.find((r) => r.table === "papers" && r.op === "upsert");
+    expect((withoutCode?.payload as { exam_code: string }).exam_code).toBe("");
+  });
+
+  it("writes the admin's chosen shift, and defaults to fn when none was given", async () => {
+    await publishAuthoredPaper({
+      subject: "AI",
+      level: "degree",
+      examDate: "2025-08-31",
+      examType: "quiz_1",
+      term: "May Term",
+      slot: "an",
+      questions: [mcq("one")],
+    });
+    const withSlot = recorded.find((r) => r.table === "papers" && r.op === "upsert");
+    expect((withSlot?.payload as { slot: string }).slot).toBe("an");
+
+    recorded.length = 0;
+    await publishAuthoredPaper({
+      subject: "AI",
+      level: "degree",
+      examDate: "2025-08-31",
+      examType: "quiz_1",
+      term: "May Term",
+      questions: [mcq("one")],
+    });
+    const withoutSlot = recorded.find((r) => r.table === "papers" && r.op === "upsert");
+    expect((withoutSlot?.payload as { slot: string }).slot).toBe("fn");
   });
 });

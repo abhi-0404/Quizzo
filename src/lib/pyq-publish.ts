@@ -2,13 +2,17 @@ import { supabase } from "@/integrations/supabase/client";
 import type { Question, QuestionAsset } from "@/data/questions";
 import type { Database } from "@/integrations/supabase/types";
 import {
+  countOfPaper,
   courseSlug,
   durationForExamType,
+  hashCoursePaper,
+  marksOfPaper,
   normaliseCourseHeading,
   termForDate,
   type ExamType,
   type MergedPaper,
   type MergedSitting,
+  type Slot,
 } from "./pyq-ingest";
 
 /**
@@ -103,12 +107,25 @@ export async function createCourseForHeading(
 
 /* ── Sitting ──────────────────────────────────────────────────────────────── */
 
-export async function upsertSitting(date: string, examType: ExamType): Promise<string> {
-  const { term, year } = termForDate(date);
+/**
+ * `term` defaults to the month-cutoff rule in `termForDate` only when the
+ * caller has no explicit one — an admin's own confirmed choice always wins
+ * over that default. This used to be unconditional, so an admin picking
+ * "Jan Term" in the paper builder for a genuinely-January-term paper dated in
+ * late December — which the cutoff reads as "Sept Term" — had that choice
+ * silently discarded and overwritten on every publish.
+ */
+export async function upsertSitting(
+  date: string,
+  examType: ExamType,
+  term?: string
+): Promise<string> {
+  const resolved = term || termForDate(date).term;
+  const { year } = termForDate(date);
   const { data, error } = await supabase
     .from("sittings")
     .upsert(
-      { exam_date: date, exam_type: examType, term, year },
+      { exam_date: date, exam_type: examType, term: resolved, year },
       { onConflict: "exam_date,exam_type" }
     )
     .select("id")
@@ -141,6 +158,8 @@ const chunked = <T,>(xs: T[], n = CHUNK): T[][] => {
 export interface PublishParams {
   sitting: MergedSitting;
   examType: ExamType;
+  /** Admin-confirmed term label ("Jan Term" etc). Falls back to the date-cutoff rule if omitted. */
+  term?: string;
   /** Normalised heading → course id, already resolved by the review step. */
   courseByHeading: Map<string, string>;
   /** Only these headings are published; anything else is skipped. */
@@ -156,10 +175,10 @@ export interface PublishResult {
 }
 
 export async function publishSitting(params: PublishParams): Promise<PublishResult> {
-  const { sitting, examType, courseByHeading, selected, onProgress } = params;
+  const { sitting, examType, term, courseByHeading, selected, onProgress } = params;
 
   const wanted = sitting.papers.filter((p) => selected.has(p.normalisedHeading));
-  const sittingId = await upsertSitting(sitting.date, examType);
+  const sittingId = await upsertSitting(sitting.date, examType, term);
   const duration = durationForExamType(examType);
 
   const result: PublishResult = { paperIds: [], publishedCourses: 0, skipped: [], figures: 0 };
@@ -174,7 +193,10 @@ export async function publishSitting(params: PublishParams): Promise<PublishResu
       continue;
     }
 
-    const paperId = await writePaper(sittingId, courseId, duration, paper);
+    // The single code an admin actually searches/reads by — the first of
+    // whatever codes this exact content collapsed under. `source_codes` keeps
+    // the full list; this is just its head, promoted to a queryable scalar.
+    const paperId = await writePaper(sittingId, courseId, duration, paper, paper.sourceCodes[0] ?? "");
     result.paperIds.push(paperId);
     result.figures += await writeQuestions(paperId, paper.questions);
 
@@ -192,7 +214,8 @@ async function writePaper(
   sittingId: string,
   courseId: string,
   duration: number,
-  paper: MergedPaper
+  paper: MergedPaper,
+  examCode: string
 ): Promise<string> {
   // The unique key is (sitting, course, programme, content_hash), so re-running
   // an import updates the existing row instead of creating a second one.
@@ -206,6 +229,7 @@ async function writePaper(
         slot: paper.slot,
         duration_minutes: duration,
         source_codes: paper.sourceCodes,
+        exam_code: examCode,
         content_hash: paper.contentHash,
         variant_label: paper.variantLabel,
         total_marks: paper.totalMarks,
@@ -225,7 +249,7 @@ async function writePaper(
   return data.id;
 }
 
-async function writeQuestions(paperId: string, questions: Question[]): Promise<number> {
+export async function writeQuestions(paperId: string, questions: Question[]): Promise<number> {
   /* Comprehension parents are expanded into one row per sub-question, each
      carrying the shared passage.
    *
@@ -306,11 +330,17 @@ async function writeQuestions(paperId: string, questions: Question[]): Promise<n
       let path = uploaded.get(asset.id);
       if (!path) {
         if (!asset.src.startsWith("data:")) continue;
-        path = `${paperId}/${asset.id}.png`;
         const blob = await dataUrlToBlob(asset.src);
+        // The crop pipeline prefers WebP and only ever falls back to PNG on
+        // an engine that can't encode it — read the extension and the
+        // storage content-type back off the blob itself rather than
+        // assuming one, so a mixed batch (some browsers, some not) still
+        // serves each figure as what it actually is.
+        const ext = blob.type === "image/webp" ? "webp" : "png";
+        path = `${paperId}/${asset.id}.${ext}`;
         const { error } = await supabase.storage
           .from(FIGURE_BUCKET)
-          .upload(path, blob, { contentType: "image/png", upsert: true });
+          .upload(path, blob, { contentType: blob.type || "image/png", upsert: true });
         if (error) throw error;
         uploaded.set(asset.id, path);
       }
@@ -331,4 +361,102 @@ async function writeQuestions(paperId: string, questions: Question[]): Promise<n
   }
 
   return uploaded.size;
+}
+
+/* ── Hand-authored papers (Paper Builder, no source PDF) ──────────────────── */
+
+/**
+ * Find the course the builder's subject dropdown refers to, or create it.
+ *
+ * Unlike `createCourseForHeading`, there is no ambiguous PDF heading to record
+ * an alias for — the admin picked an exact name from a fixed list — so a new
+ * course here is `confirmed: true` immediately.
+ */
+export async function resolveCourseBySubject(name: string, level: CourseLevel): Promise<string> {
+  const slug = courseSlug(name);
+  const { data: existing, error: selErr } = await supabase
+    .from("courses")
+    .select("id")
+    .eq("slug", slug)
+    .maybeSingle();
+  if (selErr) throw selErr;
+  if (existing) return existing.id;
+
+  const { data, error } = await supabase
+    .from("courses")
+    .insert({ name, slug, level, confirmed: true })
+    .select("id")
+    .single();
+  if (error) throw error;
+  return data.id;
+}
+
+export interface PublishAuthoredParams {
+  subject: string;
+  level: CourseLevel;
+  examDate: string;
+  examType: ExamType;
+  /** The admin's own Term selection from the Academic Context section. */
+  term: string;
+  /** The admin's own Exam Code entry from the Academic Context section, if any. */
+  examCode?: string;
+  /** The admin's own Shift selection (FN/AN) from the Academic Context section. */
+  slot?: Slot;
+  questions: Question[];
+}
+
+/**
+ * Publish a paper built directly in the admin editor (Form View or LaTeX
+ * View) rather than extracted from a source PDF.
+ *
+ * There is no cohort here to key a `programme` on, so the course level doubles
+ * as the programme — `course_level` ('foundation' | 'diploma' | 'degree') is a
+ * subset of `exam_programme`'s values, so it is always a valid one. The
+ * content hash still comes from `hashCoursePaper`, so re-publishing the exact
+ * same questions for the same sitting updates that row instead of duplicating
+ * it, same as the PDF pipeline.
+ */
+export async function publishAuthoredPaper(params: PublishAuthoredParams): Promise<string> {
+  const { subject, level, examDate, examType, term, examCode = "", slot = "fn", questions } = params;
+
+  const courseId = await resolveCourseBySubject(subject, level);
+  const sittingId = await upsertSitting(examDate, examType, term);
+  const duration = durationForExamType(examType);
+  const contentHash = hashCoursePaper(questions);
+
+  const { data, error } = await supabase
+    .from("papers")
+    .upsert(
+      {
+        sitting_id: sittingId,
+        course_id: courseId,
+        programme: level,
+        slot,
+        duration_minutes: duration,
+        source_codes: [],
+        exam_code: examCode,
+        content_hash: contentHash,
+        variant_label: "",
+        total_marks: marksOfPaper(questions),
+        question_count: countOfPaper(questions),
+        published: false,
+      },
+      { onConflict: "sitting_id,course_id,programme,content_hash" }
+    )
+    .select("id")
+    .single();
+  if (error) throw error;
+
+  const paperId = data.id;
+
+  // Same as the PDF path: replace the question set wholesale before publishing.
+  const { error: delErr } = await supabase.from("questions").delete().eq("paper_id", paperId);
+  if (delErr) throw delErr;
+
+  await writeQuestions(paperId, questions);
+
+  const { error: pubErr } = await supabase.from("papers").update({ published: true }).eq("id", paperId);
+  if (pubErr) throw pubErr;
+
+  return paperId;
 }

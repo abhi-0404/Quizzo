@@ -51,10 +51,23 @@ export interface ImportedCourse {
   name: string;
   sectionId: string;
   questions: Question[];
+  /** 1-based PDF page this course's own section heading appears on. */
+  startPage: number;
+  /** 1-based PDF page of each entry in `questions`, same order. */
+  questionPages: number[];
 }
 
 export interface TcsIonPaper {
   paperName: string;
+  /**
+   * The value of the PDF's own "Question Paper Name :" row, e.g.
+   * "IIT M IMPROVEMENT AN EXAM QIV4 26 Oct 2025" — printed inside the export
+   * itself, so it carries the same programme/slot/code/date convention as the
+   * filename regardless of what the uploaded file happens to be named (a
+   * download, a forward, a re-save — anything can rename a file; nothing
+   * rewrites the document's own header). `null` when the row isn't present.
+   */
+  contentPaperName: string | null;
   courses: ImportedCourse[];
   /** Asset id → the page region to crop for it. Consumed by `attachAssets`. */
   regions: Record<string, AssetRegion>;
@@ -112,6 +125,8 @@ const RE_ANSWERS_TYPE = /^Answers Type\s*:\s*(\w+)/;
 const RE_RESPONSE_TYPE = /^Response Type\s*:\s*(\w+)/;
 const RE_QUESTION_NUMBERS = /^Question Numbers\s*:\s*\((\d+)\s*to\s*(\d+)\)/;
 const RE_BLOCK_END = /^(Sub-Section Number|Sub questions)\s*:?/;
+/** The export's own document header — printed once, near the top of page 1. */
+const RE_PAPER_NAME = /^Question Paper Name\s*:\s*(.+)$/;
 
 /** Metadata rows that are never content. */
 const RE_META =
@@ -159,9 +174,18 @@ interface ParsedOption {
 export function parseTcsIonPaper(extract: PdfExtract, paperName = ""): TcsIonPaper {
   const { lines, optionColour, pageWidth } = extract;
 
+  let contentPaperName: string | null = null;
+  for (const line of lines) {
+    const m = clean(line.text).match(RE_PAPER_NAME);
+    if (m) {
+      contentPaperName = m[1].trim();
+      break;
+    }
+  }
+
   /* Locate course boundaries. The course name is the last ordinary line before
      the `Section Id :` row — the exporter prints it as a bare heading. */
-  const sectionAt = new Map<number, { name: string; id: string }>();
+  const sectionAt = new Map<number, { name: string; id: string; page: number }>();
   /** Line index of each course heading — also where the previous course stops. */
   const headingIdx: number[] = [];
   for (let i = 0; i < lines.length; i++) {
@@ -177,7 +201,9 @@ export function parseTcsIonPaper(extract: PdfExtract, paperName = ""): TcsIonPap
       at = j;
       break;
     }
-    sectionAt.set(i, { name: name || `Section ${sectionAt.size + 1}`, id });
+    // The heading text sits a few lines above "Section Id :" but is always on
+    // the same or an adjacent page, close enough for "open on this page".
+    sectionAt.set(i, { name: name || `Section ${sectionAt.size + 1}`, id, page: lines[at].page });
     headingIdx.push(at);
   }
 
@@ -403,7 +429,7 @@ export function parseTcsIonPaper(extract: PdfExtract, paperName = ""): TcsIonPap
   };
 
   const courseFor = (lineIdx: number) => {
-    let found: { name: string; id: string } | null = null;
+    let found: { name: string; id: string; page: number } | null = null;
     for (const [at, info] of sectionAt) {
       if (at <= lineIdx) found = info;
       else break;
@@ -431,15 +457,29 @@ export function parseTcsIonPaper(extract: PdfExtract, paperName = ""): TcsIonPap
   let seq = 0;
   const byCourse = new Map<string, ImportedCourse>();
 
-  const courseOf = (p: Parsed): ImportedCourse => {
-    const info = courseFor(p.block.start) ?? { name: "Uncategorised", id: "" };
-    let c = byCourse.get(info.id || info.name);
+  /**
+   * A block before the first `Section Id :` row belongs to a section this PDF
+   * does not contain — in practice the tail of the previous subject, left
+   * behind when a master export was split per course on a page boundary. It
+   * used to be collected into a course called "Uncategorised" that looked as
+   * publishable as any other, so an unrelated subject's questions could be
+   * published into the paper being imported. It is still surfaced rather than
+   * dropped, but named for what it is and flagged question by question.
+   */
+  const UNATTRIBUTED = "Unattributed — no section header in this PDF";
+
+  const courseOf = (p: Parsed): { course: ImportedCourse; orphan: boolean } => {
+    const info = courseFor(p.block.start);
+    // Orphan content precedes every heading in this PDF, so page 1 is the
+    // closest honest answer — there is nothing earlier to point to instead.
+    const resolved = info ?? { name: UNATTRIBUTED, id: "", page: 0 };
+    let c = byCourse.get(resolved.id || resolved.name);
     if (!c) {
-      c = { name: info.name, sectionId: info.id, questions: [] };
-      byCourse.set(info.id || info.name, c);
+      c = { name: resolved.name, sectionId: resolved.id, questions: [], startPage: resolved.page + 1, questionPages: [] };
+      byCourse.set(resolved.id || resolved.name, c);
       courses.push(c);
     }
-    return c;
+    return { course: c, orphan: info === null };
   };
 
   /** `![alt](asset-id)` — protocol-less, so the sanitiser leaves it alone. */
@@ -518,8 +558,13 @@ export function parseTcsIonPaper(extract: PdfExtract, paperName = ""): TcsIonPap
       continue;
     }
 
-    const course = courseOf(p);
+    const { course, orphan } = courseOf(p);
     const issues: string[] = [];
+    if (orphan) {
+      issues.push(
+        "no section header precedes this question, so it belongs to a section absent from this PDF — check it is not the previous subject's tail before publishing"
+      );
+    }
     // Keyed by the source Question Id so a flagged block can be traced straight
     // back to the paper it came from.
     const q: Question = {
@@ -572,11 +617,12 @@ export function parseTcsIonPaper(extract: PdfExtract, paperName = ""): TcsIonPap
     stats.byType[p.block.type] = (stats.byType[p.block.type] ?? 0) + 1;
     if (!q.isValid) stats.flagged++;
     course.questions.push(q);
+    course.questionPages.push(lines[p.block.start].page + 1);
   }
 
   stats.figures = Object.keys(regions).length;
 
-  return { paperName, courses, regions, stats };
+  return { paperName, contentPaperName, courses, regions, stats };
 }
 
 /**
