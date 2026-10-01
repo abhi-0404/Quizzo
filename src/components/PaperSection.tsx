@@ -334,6 +334,43 @@ export function PaperSection({
       subQuestions: prev.subQuestions.map((s) => (s.id === id ? { ...s, type, correct: [] } : s)),
     }));
 
+  /* ── Option add/remove for regular questions ───────────────────────────── */
+  const addOption = () =>
+    setDraft((prev) => ({ ...prev, options: [...prev.options, ""] }));
+
+  const removeOption = (i: number) =>
+    setDraft((prev) => ({
+      ...prev,
+      options: prev.options.filter((_, idx) => idx !== i),
+      correct: prev.correct
+        .filter((c) => c !== i)
+        .map((c) => (c > i ? c - 1 : c)),
+    }));
+
+  /* ── Option add/remove for sub-questions ───────────────────────────────── */
+  const addSubOption = (sqId: string) =>
+    setDraft((prev) => ({
+      ...prev,
+      subQuestions: prev.subQuestions.map((s) =>
+        s.id === sqId ? { ...s, options: [...s.options, ""] } : s
+      ),
+    }));
+
+  const removeSubOption = (sqId: string, i: number) =>
+    setDraft((prev) => ({
+      ...prev,
+      subQuestions: prev.subQuestions.map((s) => {
+        if (s.id !== sqId) return s;
+        return {
+          ...s,
+          options: s.options.filter((_, idx) => idx !== i),
+          correct: s.correct
+            .filter((c) => c !== i)
+            .map((c) => (c > i ? c - 1 : c)),
+        };
+      }),
+    }));
+
   const resetEditor = () => {
     setDraft(blankDraft());
     setEditingId(null);
@@ -671,10 +708,22 @@ export function PaperSection({
                                       assets={sq.assets}
                                     />
                                   </div>
+                                  {sq.options.length > 2 && (
+                                    <button type="button" onClick={() => removeSubOption(sq.id, i)}
+                                      title="Remove this option"
+                                      aria-label={`Sub-question ${si + 1} remove option ${String.fromCharCode(65 + i)}`}
+                                      className="shrink-0 mt-1 h-5 w-5 flex items-center justify-center rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors">
+                                      <X className="h-3 w-3" />
+                                    </button>
+                                  )}
                                 </div>
                               );
                             })}
                           </div>
+                          <button type="button" onClick={() => addSubOption(sq.id)}
+                            className="mt-2 inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] font-medium text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors">
+                            <Plus className="h-3 w-3" /> Add option
+                          </button>
                         </div>
                       ) : (
                         <div className="space-y-1">
@@ -745,10 +794,22 @@ export function PaperSection({
                             assets={draft.assets}
                           />
                         </div>
+                        {draft.options.length > 2 && (
+                          <button type="button" onClick={() => removeOption(i)}
+                            title="Remove this option"
+                            aria-label={`Remove option ${String.fromCharCode(65 + i)}`}
+                            className="shrink-0 mt-1.5 h-6 w-6 flex items-center justify-center rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors">
+                            <X className="h-3.5 w-3.5" />
+                          </button>
+                        )}
                       </div>
                     );
                   })}
                 </div>
+                <button type="button" onClick={addOption}
+                  className="mt-2 inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[12px] font-medium text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors">
+                  <Plus className="h-3.5 w-3.5" /> Add option
+                </button>
               </div>
             ) : (
               <div className="px-4 py-3 border-b border-border space-y-1">
@@ -868,43 +929,33 @@ export function PaperSection({
                            : <ChevronRight className="h-4 w-4 text-muted-foreground" />}
             </button>
             {detailsOpen && (
-              <div className="border-t border-border p-3 space-y-3">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div className="space-y-1">
-                    <label className="block text-[12px] text-muted-foreground">Level</label>
+              <div className="border-t border-border p-3">
+                <div className="flex flex-wrap items-center gap-3">
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <span className="text-[12px] text-muted-foreground shrink-0">Level</span>
                     <select value={level} onChange={(e) => onLevelChange(e.target.value)} className={selectClass}>
-                      {/* A level from an import that isn't one of the three
-                          standard labels would otherwise match no <option>,
-                          and the select would silently show whichever one
-                          happens to be first — the real value, misrepresented. */}
                       {!LEVELS.includes(level) && level && <option value={level}>{level}</option>}
                       {LEVELS.map((l) => <option key={l} value={l}>{l}</option>)}
                     </select>
                   </div>
-                  <div className="space-y-1">
-                    <label className="block text-[12px] text-muted-foreground">Subject</label>
-                    <select value={subject} onChange={(e) => onSubjectChange(e.target.value)} className={selectClass}>
-                      {/* Same reasoning: an imported course name like "Corporate
-                          Finance" that isn't in the static SUBJECTS list must
-                          still show as itself, not silently fall back to
-                          SUBJECTS[0] ("Statistics I") because nothing matched. */}
+                  <div className="flex items-center gap-1.5 flex-1 min-w-[160px]">
+                    <span className="text-[12px] text-muted-foreground shrink-0">Subject</span>
+                    <select value={subject} onChange={(e) => onSubjectChange(e.target.value)} className={`${selectClass} flex-1`}>
                       {!SUBJECTS.includes(subject) && subject && <option value={subject}>{subject}</option>}
                       {SUBJECTS.map((s) => <option key={s} value={s}>{s}</option>)}
                     </select>
                   </div>
-                </div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="inline-flex items-center rounded-md border border-border bg-secondary px-2.5 py-1 text-[12px] text-foreground">
-                    Total Questions: <span className="ml-1 font-semibold tabular-nums">{totalQuestions}</span>
+                  <span className="inline-flex items-center rounded-md border border-border bg-secondary px-2.5 py-1 text-[12px] text-foreground shrink-0">
+                    TQ: <span className="ml-1 font-semibold tabular-nums">{totalQuestions}</span>
                   </span>
-                  <span className="inline-flex items-center rounded-md border border-border bg-secondary px-2.5 py-1 text-[12px] text-foreground">
+                  <span className="inline-flex items-center rounded-md border border-border bg-secondary px-2.5 py-1 text-[12px] text-foreground shrink-0">
                     Duration: <span className="ml-1 font-semibold">{duration}</span>
                   </span>
-                  <span className="inline-flex items-center rounded-md border border-border bg-secondary px-2.5 py-1 text-[12px] text-foreground">
-                    Total Marks: <span className="ml-1 font-semibold tabular-nums">{totalMarks}</span>
+                  <span className="inline-flex items-center rounded-md border border-border bg-secondary px-2.5 py-1 text-[12px] text-foreground shrink-0">
+                    Marks: <span className="ml-1 font-semibold tabular-nums">{totalMarks}</span>
                   </span>
                   {invalidCount > 0 && (
-                    <span className="inline-flex items-center rounded-md border border-red-200 dark:border-red-900 bg-red-50 dark:bg-[#1A0F0F] px-2.5 py-1 text-[12px] text-red-600 dark:text-red-400">
+                    <span className="inline-flex items-center rounded-md border border-red-200 dark:border-red-900 bg-red-50 dark:bg-[#1A0F0F] px-2.5 py-1 text-[12px] text-red-600 dark:text-red-400 shrink-0">
                       Flagged: <span className="ml-1 font-semibold tabular-nums">{invalidCount}</span>
                     </span>
                   )}
@@ -920,11 +971,34 @@ export function PaperSection({
               aria-expanded={navigatorOpen}
               className="w-full flex items-center justify-between gap-2 px-4 py-2.5 text-left hover:bg-secondary transition-colors rounded-md"
             >
-              <span className="flex items-center gap-2">
-                <span className="text-[13px] font-medium">Paper Navigator</span>
-                <span className="text-[12px] text-muted-foreground">
-                  {questions.length} block{questions.length === 1 ? "" : "s"}
-                </span>
+              <span className="flex items-center gap-2 min-w-0 flex-wrap">
+                <span className="text-[13px] font-medium shrink-0">Paper Navigator</span>
+                {questions.length > 0 && (() => {
+                  // Count individual questions — comprehension expands to sub-questions
+                  let sc = 0, mc = 0, num = 0, cmpTotal = 0;
+                  for (const q of questions) {
+                    if (q.type === "comprehension") {
+                      for (const sq of q.subQuestions) {
+                        if (sq.type === "single_correct") sc++;
+                        else if (sq.type === "multi_correct") mc++;
+                        else num++;
+                      }
+                      cmpTotal++;
+                    } else if (q.type === "single") sc++;
+                    else if (q.type === "multi") mc++;
+                    else num++;
+                  }
+                  const parts: string[] = [];
+                  if (sc  > 0) parts.push(`${sc} single`);
+                  if (mc  > 0) parts.push(`${mc} multi`);
+                  if (num > 0) parts.push(`${num} integer`);
+                  if (cmpTotal > 0) parts.push(`${cmpTotal} comprehension`);
+                  return (
+                    <span className="text-[12px] text-muted-foreground">
+                      {parts.join(" · ")}
+                    </span>
+                  );
+                })()}
               </span>
               {navigatorOpen ? <ChevronDown className="h-4 w-4 text-muted-foreground" />
                              : <ChevronRight className="h-4 w-4 text-muted-foreground" />}
@@ -938,27 +1012,77 @@ export function PaperSection({
                       No blocks yet — save one or import a PYQ PDF.
                     </p>
                   ) : (
-                    <div className="flex flex-wrap gap-2">
-                      {questions.map((q, i) => {
+                    <div className="flex flex-wrap gap-1.5">
+                      {questions.flatMap((q, i) => {
+                        const qNum = questionNumberAt(i);
                         const invalid = !q.isValid;
                         const active = editingId === q.id;
-                        return (
+
+                        if (q.type === "comprehension" && q.inputMode === "form" && q.subQuestions.length > 0) {
+                          // Expand each sub-question into its own chip
+                          return q.subQuestions.map((sq, si) => {
+                            const n = qNum + si;
+                            const subType = sq.type === "single_correct" ? "C-SC"
+                              : sq.type === "multi_correct" ? "C-MC"
+                              : "C-INT";
+                            const subColor = sq.type === "single_correct"
+                              ? "border-blue-500/40 bg-blue-500/10 text-blue-400 hover:bg-blue-500/20"
+                              : sq.type === "multi_correct"
+                              ? "border-purple-500/40 bg-purple-500/10 text-purple-400 hover:bg-purple-500/20"
+                              : "border-orange-500/40 bg-orange-500/10 text-orange-400 hover:bg-orange-500/20";
+                            return (
+                              <button
+                                key={`${q.id}-sq-${sq.id}`}
+                                onClick={() => loadQuestion(q, true)}
+                                title={`Q${n} · Comprehension sub-question (${subType})`}
+                                aria-label={`Open comprehension block containing Q${n}`}
+                                className={`h-9 min-w-[44px] px-1.5 rounded border text-[10px] font-medium transition-colors flex flex-col items-center justify-center leading-none gap-0.5 ${
+                                  invalid
+                                    ? `bg-red-500/20 border-red-500 text-red-400 hover:bg-red-500/30 ${active ? "ring-1 ring-emerald-500" : ""}`
+                                    : active
+                                    ? `ring-1 ring-emerald-500 ${subColor}`
+                                    : subColor
+                                }`}
+                              >
+                                <span className="tabular-nums text-[11px]">{n}</span>
+                                <span className="opacity-80">{subType}</span>
+                              </button>
+                            );
+                          });
+                        }
+
+                        // Regular (non-comprehension) chip
+                        const typeKey = q.type as string;
+                        const abbr = typeKey === "single" ? "SC"
+                          : typeKey === "multi" ? "MC"
+                          : typeKey === "numerical" ? "INT"
+                          : "CMP";
+                        const chipColor = typeKey === "single"
+                          ? "border-blue-500/40 bg-blue-500/10 text-blue-400 hover:bg-blue-500/20"
+                          : typeKey === "multi"
+                          ? "border-purple-500/40 bg-purple-500/10 text-purple-400 hover:bg-purple-500/20"
+                          : typeKey === "numerical"
+                          ? "border-orange-500/40 bg-orange-500/10 text-orange-400 hover:bg-orange-500/20"
+                          : "border-teal-500/40 bg-teal-500/10 text-teal-400 hover:bg-teal-500/20";
+
+                        return [(
                           <button
                             key={q.id}
                             onClick={() => loadQuestion(q, true)}
-                            title={`${typeLabel(q.type)}${invalid ? ` — ${q.issues.length} issue${q.issues.length === 1 ? "" : "s"}` : ""}`}
-                            aria-label={`Open question ${questionLabelAt(i, q)}${invalid ? " (needs review)" : ""}`}
-                            className={`h-9 min-w-9 px-1 rounded border text-[12px] font-medium tabular-nums transition-colors ${
+                            title={`Q${qNum} · ${typeLabel(q.type)}${invalid ? ` — ${q.issues.length} issue${q.issues.length === 1 ? "" : "s"}` : ""}`}
+                            aria-label={`Open question ${qNum}${invalid ? " (needs review)" : ""}`}
+                            className={`h-9 min-w-[44px] px-1.5 rounded border text-[10px] font-medium transition-colors flex flex-col items-center justify-center leading-none gap-0.5 ${
                               invalid
-                                ? `bg-red-500 text-white hover:bg-red-600 ${active ? "border-emerald-500" : "border-red-600"}`
+                                ? `bg-red-500/20 border-red-500 text-red-400 hover:bg-red-500/30 ${active ? "ring-1 ring-emerald-500" : ""}`
                                 : active
-                                ? "border-emerald-500 bg-emerald-500 text-white"
-                                : "border-border bg-card text-foreground hover:bg-secondary"
+                                ? `ring-1 ring-emerald-500 ${chipColor}`
+                                : chipColor
                             }`}
                           >
-                            {questionLabelAt(i, q)}
+                            <span className="tabular-nums text-[11px]">{qNum}</span>
+                            <span className="opacity-80">{abbr}</span>
                           </button>
-                        );
+                        )];
                       })}
                     </div>
                   )}

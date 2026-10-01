@@ -4,12 +4,9 @@ import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { extractPdf, PageRenderer } from "@/lib/pdf-extract";
 import { attachAssets, parseTcsIonPaper, type TcsIonPaper } from "@/lib/parse-tcs-ion";
 import {
-  headingsOf,
-  manualPaperFilename,
   mergeSitting,
   parsePaperFilename,
   parsePaperMetaFromText,
-  sittingDateConflict,
   type MergedSitting,
   type MergeInput,
   type PaperFilename,
@@ -38,7 +35,7 @@ import { LEVELS } from "@/pages/paper-builder-taxonomy";
  * figures reach the database.
  */
 
-type Phase = "idle" | "reading" | "meta" | "review";
+type Phase = "idle" | "reading" | "review";
 
 /** One PDF, parsed and fully imaged, waiting for a filename or a typed-in date. */
 interface PendingFile {
@@ -72,6 +69,13 @@ export interface BuilderCourse {
   /** 1-based PDF page for each entry in `questions`, same order, where known
    *  — undefined entries have no page (nothing in the source pinpoints one). */
   questionPages?: (number | undefined)[];
+  /** Sitting-level metadata extracted from the PDF — present only when the
+   *  PDF or its filename carried it. Undefined means "not found; leave blank". */
+  examDate?: string;
+  /** "FN" | "AN" — maps to Shift in the builder's Exam Context Settings. */
+  shift?: "FN" | "AN";
+  /** First exam code seen for this paper (e.g. "QDB1"). */
+  examCode?: string;
 }
 
 interface Props {
@@ -95,25 +99,11 @@ function programmeToLevel(programme: Programme): string {
   }
 }
 
-const btn =
-  "inline-flex items-center justify-center gap-1.5 rounded-md border border-border bg-card px-3 py-1.5 " +
-  "text-[12px] font-medium text-foreground hover:bg-secondary transition-colors disabled:opacity-50";
 const primary =
   "inline-flex items-center justify-center gap-1.5 rounded-md bg-emerald-600 px-3 py-1.5 text-[12px] " +
   "font-medium text-white hover:bg-emerald-700 disabled:opacity-60 transition-colors";
 const field =
   "h-8 rounded-md border border-border bg-background px-2 text-[12px] text-foreground";
-
-const PROGRAMMES: { value: Programme; label: string }[] = [
-  { value: "foundation", label: "Foundation" },
-  { value: "diploma", label: "Diploma" },
-  { value: "degree", label: "Degree" },
-  { value: "improvement", label: "Improvement" },
-];
-const SLOTS: { value: Slot; label: string }[] = [
-  { value: "fn", label: "Forenoon" },
-  { value: "an", label: "Afternoon" },
-];
 
 function Bar({ value }: { value: number }) {
   return (
@@ -143,19 +133,8 @@ export function PyqImport({ open, onOpenChange, onLoadIntoBuilder }: Props) {
    *  Also what the Course column's options are filtered by. */
   const [levelByHeading, setLevelByHeading] = useState<Record<string, string>>({});
 
-  // Files read but not yet turned into MergeInputs — held here between the
-  // "reading" and "meta" phases so a filename that failed to parse can be
-  // filled in by hand instead of the whole file being discarded.
+  // Parsed files — held here so the builder can receive their blobs at hand-off.
   const [pending, setPending] = useState<PendingFile[]>([]);
-  // Blank, not a guessed default: the PDF gives no evidence for any of these
-  // three, so nothing is pre-selected unless a sibling file in the same batch
-  // actually states it — an admin who does not look at this form must not be
-  // able to publish a paper tagged with a programme/slot/date it never had.
-  const [manualProgramme, setManualProgramme] = useState<Programme | "">("");
-  const [manualSlot, setManualSlot] = useState<Slot | "">("");
-  const [manualDate, setManualDate] = useState("");
-  /** Per-file exam code, keyed by file name — optional, unlike the rest. */
-  const [manualCodes, setManualCodes] = useState<Record<string, string>>({});
 
   const inputs = useRef<MergeInput[]>([]);
 
@@ -176,8 +155,6 @@ export function PyqImport({ open, onOpenChange, onLoadIntoBuilder }: Props) {
       for (const p of prev) URL.revokeObjectURL(p.url);
       return [];
     });
-    setManualCodes({});
-    setManualDate("");
     inputs.current = [];
   }, []);
 
@@ -245,21 +222,25 @@ export function PyqImport({ open, onOpenChange, onLoadIntoBuilder }: Props) {
 
       setPending(items);
 
-      const unresolved = items.filter((it) => it.meta === null);
-      if (unresolved.length > 0) {
-        // A per-course split ("MLT.pdf") carries none of the convention's
-        // fields. Pre-fill the shared ones from whichever file in this batch
-        // DID parse, so a mixed batch does not make the admin retype what one
-        // of its own files already states.
-        const known = items.find((it) => it.meta)?.meta;
-        setManualProgramme(known?.programme ?? "");
-        setManualSlot(known?.slot ?? "");
-        setManualDate(known?.date ?? "");
-        setPhase("meta");
-        return;
-      }
+      // Use metadata from whatever file parsed successfully; fall back to safe
+      // defaults so mergeSitting always gets a valid PaperFilename shape.
+      const knownMeta = items.find((it) => it.meta)?.meta;
+      const programme: Programme = knownMeta?.programme ?? "degree";
+      const slot: Slot = knownMeta?.slot ?? "fn";
+      const placeholderDate = knownMeta?.date ?? "";
 
-      await finalizeInputs(items.map((it) => ({ file: it.meta as PaperFilename, paper: it.paper })));
+      await finalizeInputs(
+        items.map((it) => ({
+          file: it.meta ?? {
+            programme,
+            slot,
+            code: "",
+            codeFamily: "",
+            date: placeholderDate,
+          },
+          paper: it.paper,
+        }))
+      );
     } catch (e) {
       // `items` never reached `setPending` if a later file in the batch threw,
       // so its object URLs have no owner to revoke them on the next reset —
@@ -270,10 +251,13 @@ export function PyqImport({ open, onOpenChange, onLoadIntoBuilder }: Props) {
     }
   };
 
-  /** Merge + course-match, shared by the direct path and the manual-meta path. */
+  /** Merge + course-match. */
   const finalizeInputs = async (collected: MergeInput[]) => {
     try {
-      const dates = sittingDateConflict(collected);
+      inputs.current = collected;
+
+      // Only validate date conflict when all files have real dates.
+      const dates = [...new Set(collected.map((c) => c.file.date).filter(Boolean))];
       if (dates.length > 1) {
         setError(
           `Those PDFs span more than one date (${dates.join(", ")}). A sitting is a single date — import them separately.`
@@ -281,8 +265,6 @@ export function PyqImport({ open, onOpenChange, onLoadIntoBuilder }: Props) {
         setPhase("idle");
         return;
       }
-
-      inputs.current = collected;
 
       const merged = mergeSitting(collected);
       setSitting(merged);
@@ -326,45 +308,6 @@ export function PyqImport({ open, onOpenChange, onLoadIntoBuilder }: Props) {
     }
   };
 
-  /**
-   * The admin has typed in whatever this batch's filenames couldn't supply.
-   *
-   * Only the date actually blocks continuing — it is the one thing this
-   * dialog cannot proceed without (a sitting is keyed by date, and there is
-   * no PDF content to fall back on for it). Programme and slot are still
-   * offered because they help sort cohorts and seed a level guess, but an
-   * admin who doesn't know them yet isn't stuck here: they default to
-   * "degree"/"fn" and can be corrected per-subject once the paper is open in
-   * the builder, the same as any other level or subject mistake.
-   */
-  const submitManualMeta = () => {
-    setError(null);
-    if (!manualDate) {
-      setError("Fill in the required field.");
-      return;
-    }
-    try {
-      const programme = manualProgramme || "degree";
-      const slot = manualSlot || "fn";
-      const collected: MergeInput[] = pending.map((it) => ({
-        file:
-          it.meta ??
-          manualPaperFilename({
-            programme,
-            slot,
-            code: manualCodes[it.name] ?? "",
-            date: manualDate,
-          }),
-        paper: it.paper,
-      }));
-      setPhase("reading");
-      setNote("Matching courses");
-      void finalizeInputs(collected);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not apply that date.");
-    }
-  };
-
   /* ── Course mapping ────────────────────────────────────────────────────── */
 
   const chooseCourse = async (heading: string, courseId: string) => {
@@ -397,7 +340,11 @@ export function PyqImport({ open, onOpenChange, onLoadIntoBuilder }: Props) {
 
   return (
     <Dialog open={open} onOpenChange={busy ? () => undefined : onOpenChange}>
-      <DialogContent className="max-w-5xl">
+      <DialogContent
+        className="max-w-5xl"
+        onPointerDownOutside={(e) => e.preventDefault()}
+        onInteractOutside={(e) => e.preventDefault()}
+      >
         <DialogTitle className="text-[15px] font-semibold">Import an exam sitting</DialogTitle>
 
         {error && (
@@ -445,170 +392,53 @@ export function PyqImport({ open, onOpenChange, onLoadIntoBuilder }: Props) {
           </div>
         )}
 
-        {phase === "meta" && (
-          <div className="space-y-3">
-            <p className="text-[13px] text-muted-foreground">
-              {pending.length === 1
-                ? "This PDF's own content and filename didn't have the exam date. Programme and slot help but aren't required — leave them if you don't know."
-                : `${pending.filter((it) => it.meta === null).length} of ${pending.length} files did not carry the exam date. Programme and slot help but aren't required — leave them if you don't know. They apply to every file that needs them, a per-course split is normally all from the same sitting.`}
-            </p>
-
-            <div className="flex flex-wrap items-end gap-3">
-              <label className="flex flex-col gap-1 text-[11px] text-muted-foreground">
-                Exam date
-                <input
-                  type="date"
-                  className={field}
-                  value={manualDate}
-                  onChange={(e) => setManualDate(e.target.value)}
-                />
-              </label>
-              <label className="flex flex-col gap-1 text-[11px] text-muted-foreground">
-                Programme (optional)
-                <select
-                  className={field}
-                  value={manualProgramme}
-                  onChange={(e) => setManualProgramme(e.target.value as Programme | "")}
-                >
-                  <option value="">— select —</option>
-                  {PROGRAMMES.map((p) => (
-                    <option key={p.value} value={p.value}>{p.label}</option>
-                  ))}
-                </select>
-              </label>
-              <label className="flex flex-col gap-1 text-[11px] text-muted-foreground">
-                Slot (optional)
-                <select
-                  className={field}
-                  value={manualSlot}
-                  onChange={(e) => setManualSlot(e.target.value as Slot | "")}
-                >
-                  <option value="">— select —</option>
-                  {SLOTS.map((s) => (
-                    <option key={s.value} value={s.value}>{s.label}</option>
-                  ))}
-                </select>
-              </label>
-            </div>
-
-            {pending.length === 1 ? (
-              // One file — a whole table is a lot of chrome around a single
-              // row; the same information reads fine as a plain inline field.
-              <div className="flex flex-wrap items-center gap-3 rounded-md border border-border px-3 py-2">
-                <span className="text-[13px] font-medium truncate">{pending[0].name}</span>
-                {pending[0].meta ? (
-                  <span className="text-[11px] text-muted-foreground">
-                    read from the file — {pending[0].meta.date} · {pending[0].meta.programme} · {pending[0].meta.code}
-                  </span>
-                ) : (
-                  <label className="flex items-center gap-2 text-[11px] text-muted-foreground">
-                    Exam code (optional)
-                    <input
-                      className={`${field} w-32`}
-                      placeholder="e.g. QDB1"
-                      value={manualCodes[pending[0].name] ?? ""}
-                      onChange={(e) =>
-                        setManualCodes((m) => ({ ...m, [pending[0].name]: e.target.value.toUpperCase() }))
-                      }
-                    />
-                  </label>
-                )}
-              </div>
-            ) : (
-              <div className="ghost-scroll max-h-[280px] overflow-y-auto rounded-md border border-border">
-                <table className="w-full border-collapse text-[13px]">
-                  <thead className="sticky top-0 bg-muted">
-                    <tr>
-                      <th className="border-b border-border px-3 py-2 text-left font-medium">File</th>
-                      <th className="border-b border-border px-3 py-2 text-left font-medium">Status</th>
-                      <th className="border-b border-border px-3 py-2 text-left font-medium">
-                        Exam code <span className="font-normal text-muted-foreground">(optional)</span>
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {pending.map((it) => (
-                      <tr key={it.name}>
-                        <td className="border-b border-border px-3 py-1.5">{it.name}</td>
-                        <td className="border-b border-border px-3 py-1.5">
-                          {it.meta ? (
-                            <span className="text-[11px] text-muted-foreground">
-                              read from file — {it.meta.date} · {it.meta.programme} · {it.meta.code}
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center gap-1 text-[11px] font-medium text-amber-700 dark:text-amber-400">
-                              <AlertTriangle className="h-3 w-3" aria-hidden="true" />
-                              uses the fields above
-                            </span>
-                          )}
-                        </td>
-                        <td className="border-b border-border px-3 py-1.5">
-                          <input
-                            className={`${field} w-32`}
-                            placeholder="e.g. QDB1"
-                            disabled={!!it.meta}
-                            value={it.meta ? it.meta.code : manualCodes[it.name] ?? ""}
-                            onChange={(e) =>
-                              setManualCodes((m) => ({ ...m, [it.name]: e.target.value.toUpperCase() }))
-                            }
-                          />
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-
-            <div className="flex items-center justify-between gap-3">
-              <button className={btn} onClick={reset}>Start over</button>
-              <button
-                className={primary}
-                disabled={!manualDate}
-                onClick={submitManualMeta}
-              >
-                Continue
-              </button>
-            </div>
-          </div>
-        )}
-
         {phase === "review" && sitting && catalog && (
           <div className="space-y-3">
             <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px] text-muted-foreground">
-              <span>{sitting.date}</span>
+              {sitting.date && <span>{sitting.date}</span>}
               <span>{sitting.stats.files} PDF{sitting.stats.files === 1 ? "" : "s"}</span>
-              <span>{sitting.papers.length} papers</span>
+              <span>{sitting.papers.length} paper{sitting.papers.length === 1 ? "" : "s"}</span>
               {sitting.stats.duplicates > 0 && <span>{sitting.stats.duplicates} duplicates collapsed</span>}
               {sitting.stats.variants > 0 && <span>{sitting.stats.variants} variants kept</span>}
             </div>
 
-            <div className="ghost-scroll max-h-[380px] overflow-y-auto rounded-md border border-border">
-              <table className="w-full border-collapse text-[13px]">
-                <thead className="sticky top-0 bg-muted">
-                  <tr>
-                    <th className="border-b border-border px-2 py-2 w-8" />
-                    <th className="border-b border-border px-3 py-2 text-left font-medium">Heading</th>
-                    <th className="border-b border-border px-3 py-2 text-left font-medium">Level</th>
-                    <th className="border-b border-border px-3 py-2 text-left font-medium">Course</th>
-                    <th className="border-b border-border px-3 py-2 text-left font-medium">Cohort</th>
-                    <th className="border-b border-border px-3 py-2 text-left font-medium">Codes</th>
-                    <th className="border-b border-border px-3 py-2 text-right font-medium">Q</th>
-                    <th className="border-b border-border px-3 py-2 text-right font-medium">Marks</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {sitting.papers.map((p) => {
+            {sitting.papers.length === 0 ? (
+              <div className="flex flex-col items-center justify-center gap-2 rounded-md border border-dashed border-border bg-card py-10 text-center">
+                <AlertTriangle className="h-5 w-5 text-muted-foreground" />
+                <p className="text-[13px] font-medium">No subjects found in this PDF</p>
+                <p className="text-[11px] text-muted-foreground max-w-[380px]">
+                  The PDF didn't contain recognisable section headers. Check that it's a TCS iON exam paper and try again.
+                </p>
+                <button
+                  className="mt-2 inline-flex items-center gap-1.5 rounded-md border border-border bg-card px-3 py-1.5 text-[12px] font-medium text-foreground hover:bg-secondary transition-colors"
+                  onClick={reset}
+                >
+                  Try another PDF
+                </button>
+              </div>
+            ) : (
+              <div className="ghost-scroll max-h-[380px] overflow-y-auto rounded-md border border-border">
+                <table className="w-full border-collapse text-[13px]">
+                  <thead className="sticky top-0 bg-muted">
+                    <tr>
+                      <th className="border-b border-border px-2 py-2 w-8" />
+                      <th className="border-b border-border px-3 py-2 text-left font-medium">Heading</th>
+                      <th className="border-b border-border px-3 py-2 text-left font-medium">Course</th>
+                      <th className="border-b border-border px-3 py-2 text-left font-medium">Level</th>
+                      <th className="border-b border-border px-3 py-2 text-right font-medium">TQ</th>
+                      <th className="border-b border-border px-3 py-2 text-right font-medium">Marks</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {sitting.papers.map((p) => {
                     const on = selected.has(p.normalisedHeading);
                     const courseId = mapping[p.normalisedHeading] ?? "";
                     const level = levelByHeading[p.normalisedHeading] ?? "Foundation";
                     const levelKey = level.toLowerCase() as CourseLevel;
-                    // Only offer courses at the level just chosen — picking
-                    // Foundation should never turn up a degree elective.
                     const coursesAtLevel = catalog.courses.filter((c) => c.level === levelKey);
                     const rowKey = `${p.normalisedHeading}-${p.programme}-${p.contentHash}`;
                     return (
-                      <tr key={rowKey}>
+                      <tr key={rowKey} className={on ? "" : "opacity-50"}>
                         <td className="border-b border-border px-2 py-1.5">
                           <input
                             type="checkbox"
@@ -623,20 +453,35 @@ export function PyqImport({ open, onOpenChange, onLoadIntoBuilder }: Props) {
                             }
                           />
                         </td>
-                        <td className="border-b border-border px-3 py-1.5">
+                        <td className="border-b border-border px-3 py-1.5 font-medium">
                           {p.sourceHeading}
                           {p.variantLabel && (
-                            <span className="ml-1.5 text-[11px] text-muted-foreground">{p.variantLabel}</span>
+                            <span className="ml-1.5 text-[11px] font-normal text-muted-foreground">{p.variantLabel}</span>
                           )}
-                          {p.orphan && (
-                            <span
-                              title="No section header precedes these questions in the PDF — likely the tail of the previous subject, not this one. Left unchecked; verify before including it."
-                              className="ml-1.5 inline-flex items-center gap-1 rounded border border-amber-300 bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-800 dark:border-amber-900 dark:bg-[#1E1707] dark:text-amber-400"
-                            >
-                              <AlertTriangle className="h-3 w-3" aria-hidden="true" />
-                              unattributed
-                            </span>
-                          )}
+                        </td>
+                        <td className="border-b border-border px-3 py-1.5">
+                          <select
+                            className={`${field} w-full`}
+                            value={courseId}
+                            onChange={(e) => {
+                              if (e.target.value === "__new__") {
+                                void createCourse(p.normalisedHeading, p.sourceHeading, levelKey);
+                              } else if (e.target.value) {
+                                void chooseCourse(p.normalisedHeading, e.target.value);
+                              } else {
+                                setMapping((m) => {
+                                  const { [p.normalisedHeading]: _drop, ...rest } = m;
+                                  return rest;
+                                });
+                              }
+                            }}
+                          >
+                            <option value="">— pick a course —</option>
+                            {coursesAtLevel.map((c) => (
+                              <option key={c.id} value={c.id}>{c.name}</option>
+                            ))}
+                            <option value="__new__">+ create &ldquo;{p.sourceHeading}&rdquo;</option>
+                          </select>
                         </td>
                         <td className="border-b border-border px-3 py-1.5">
                           <select
@@ -645,8 +490,6 @@ export function PyqImport({ open, onOpenChange, onLoadIntoBuilder }: Props) {
                             onChange={(e) => {
                               const nextLevel = e.target.value;
                               setLevelByHeading((m) => ({ ...m, [p.normalisedHeading]: nextLevel }));
-                              // The mapped course may not exist at the new level — drop it
-                              // rather than silently keep a Foundation course under Degree.
                               const nextKey = nextLevel.toLowerCase() as CourseLevel;
                               const stillValid = catalog.courses.find((c) => c.id === courseId)?.level === nextKey;
                               if (!stillValid) {
@@ -660,37 +503,10 @@ export function PyqImport({ open, onOpenChange, onLoadIntoBuilder }: Props) {
                             {LEVELS.map((l) => <option key={l} value={l}>{l}</option>)}
                           </select>
                         </td>
-                        <td className="border-b border-border px-3 py-1.5">
-                          <select
-                            className={`${field} w-full`}
-                            value={courseId}
-                            onChange={(e) => {
-                              if (e.target.value === "__new__") {
-                                void createCourse(p.normalisedHeading, p.sourceHeading, levelKey);
-                              } else if (e.target.value) {
-                                void chooseCourse(p.normalisedHeading, e.target.value);
-                              }
-                            }}
-                          >
-                            <option value="">— pick a course —</option>
-                            {coursesAtLevel.map((c) => (
-                              <option key={c.id} value={c.id}>
-                                {c.name}
-                              </option>
-                            ))}
-                            <option value="__new__">+ create &ldquo;{p.sourceHeading}&rdquo;</option>
-                          </select>
-                        </td>
-                        <td className="border-b border-border px-3 py-1.5 capitalize">
-                          {p.programme} · {p.slot.toUpperCase()}
-                        </td>
-                        <td className="border-b border-border px-3 py-1.5 text-[12px] text-muted-foreground">
-                          {p.sourceCodes.join(", ")}
-                        </td>
-                        <td className="border-b border-border px-3 py-1.5 text-right tabular-nums">
+                        <td className="border-b border-border px-3 py-1.5 text-right tabular-nums text-muted-foreground">
                           {p.questionCount}
                         </td>
-                        <td className="border-b border-border px-3 py-1.5 text-right tabular-nums">
+                        <td className="border-b border-border px-3 py-1.5 text-right tabular-nums text-muted-foreground">
                           {p.totalMarks}
                         </td>
                       </tr>
@@ -699,24 +515,37 @@ export function PyqImport({ open, onOpenChange, onLoadIntoBuilder }: Props) {
                 </tbody>
               </table>
             </div>
+            )}
 
+            {sitting.papers.length > 0 && (
             <div className="flex items-center justify-end">
               <button
                 className={primary}
                 disabled={!onLoadIntoBuilder || publishable.length === 0}
                 onClick={() => {
                   if (!onLoadIntoBuilder) return;
+                  // Sitting-level metadata — present only when the PDF/filename
+                  // carried it. Slot "fn"/"an" → "FN"/"AN" for the builder.
+                  const sittingDate = sitting.date || undefined;
+                  const sittingShift = sitting.papers[0]?.slot
+                    ? (sitting.papers[0].slot.toUpperCase() as "FN" | "AN")
+                    : undefined;
                   onLoadIntoBuilder(
                     publishable.map((p) => {
                       const source = pending[p.sourceFileIndex];
                       return {
                         questions: p.questions,
-                        courseName: p.sourceHeading,
+                        courseName:
+                          catalog.courses.find((c) => c.id === (mapping[p.normalisedHeading] ?? ""))?.name ??
+                          p.sourceHeading,
                         level: levelByHeading[p.normalisedHeading] ?? programmeToLevel(p.programme),
                         pdfBlob: source?.blob,
                         pdfName: source?.name,
                         pdfStartPage: p.startPage,
                         questionPages: p.questionPages,
+                        examDate: sittingDate,
+                        shift: sittingShift,
+                        examCode: p.sourceCodes[0] || undefined,
                       };
                     })
                   );
@@ -726,6 +555,7 @@ export function PyqImport({ open, onOpenChange, onLoadIntoBuilder }: Props) {
                 Open {publishable.length} paper{publishable.length === 1 ? "" : "s"} in builder
               </button>
             </div>
+            )}
           </div>
         )}
       </DialogContent>

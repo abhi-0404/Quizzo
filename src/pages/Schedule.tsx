@@ -280,7 +280,11 @@ export default function Schedule() {
 
       {/* Add / Edit modal */}
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent
+          className="max-w-2xl"
+          onPointerDownOutside={(e) => e.preventDefault()}
+          onInteractOutside={(e) => e.preventDefault()}
+        >
           <DialogHeader>
             <DialogTitle className="text-[14px]">
               {isOverwrite ? "Edit Schedule Entry" : "Add Schedule Entry"}

@@ -7,8 +7,8 @@
 
 @layer base {
   :root {
-    /* Canvas is gray-50 so that white surfaces read as raised without shadows. */
-    --background: 210 20% 98%;
+    /* Canvas is stone-100 so that white surfaces read as raised without shadows. */
+    --background: 220 9% 95%;
     --foreground: 221 39% 11%;
 
     /* Surfaces (cards, sidebars, modals, containers) are pure white. */
@@ -126,7 +126,7 @@
   }
 
   html {
-    background-color: hsl(210 20% 98%);
+    background-color: hsl(220 9% 95%);
   }
 
   html.dark {
@@ -158,7 +158,7 @@
 --------------------------------------------------------------------------- */
 .theme-scope-light {
   color-scheme: light;
-  --background: 210 20% 98%;
+  --background: 220 9% 95%;
   --foreground: 221 39% 11%;
   --card: 0 0% 100%;
   --card-foreground: 221 39% 11%;

@@ -24,6 +24,7 @@ import Exam from "./pages/Exam";
 import ExamReport from "./pages/ExamReport";
 import DevPyqLab from "./pages/DevPyqLab";
 import DevPyqImportLab from "./pages/DevPyqImportLab";
+import AuthCallback from "./pages/AuthCallback";
 
 
 const queryClient = new QueryClient();
@@ -41,6 +42,7 @@ const App = () => {
             <PendingAttemptSync />
             <Routes>
               <Route path="/auth" element={<Auth />} />
+              <Route path="/auth/callback" element={<AuthCallback />} />
               <Route path="/" element={<Index />} />
               <Route path="/admin/overview" element={<ProtectedRoute requireAdmin><Overview /></ProtectedRoute>} />
               <Route path="/admin/create" element={<ProtectedRoute requireAdmin><CreateContent /></ProtectedRoute>} />

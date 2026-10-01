@@ -46,7 +46,7 @@ const Landing = () => {
   }, [theme]);
 
   return (
-    <div className="min-h-screen bg-background text-foreground overflow-x-hidden">
+    <div className="min-h-screen bg-[#f3f4f6] dark:bg-zinc-950 text-foreground overflow-x-hidden">
       {/* Nav */}
       <nav className="fixed top-0 z-50 w-full bg-background border-b border-border px-6">
         <div className="mx-auto flex h-[56px] max-w-[1200px] items-center justify-between">
@@ -76,7 +76,7 @@ const Landing = () => {
           <div className="pt-[52px] pb-16 relative flex">
             {/* Left column — text */}
             <div className="relative z-[3] flex-1 min-w-0 max-w-[540px]">
-              <h1 className="text-[clamp(2rem,4vw,3.2rem)] font-[500] leading-[1.08] tracking-[-0.04em] text-foreground max-w-[540px]">
+              <h1 className="text-[clamp(2rem,4vw,3.2rem)] font-[500] leading-[1.08] tracking-[-0.04em] max-w-[540px] bg-gradient-to-r from-zinc-600 via-zinc-950 to-zinc-600 bg-clip-text text-transparent dark:from-zinc-400 dark:via-white dark:to-zinc-400">
                 Ace your IIT Madras exams with past papers
               </h1>
               <p className="mt-6 text-base leading-relaxed text-muted-foreground max-w-[420px]">
@@ -87,23 +87,23 @@ const Landing = () => {
             {/* Right column — 3D cube */}
             <div className="hidden md:block flex-1 relative z-[1] pointer-events-none" style={{ minWidth: 0 }}>
               <div className="absolute top-1/2 right-0 -translate-y-1/2" style={{ width: CUBE_SIZE, height: CUBE_SIZE, transform: `translate(${-CUBE_OFFSET_X}px, calc(-50% + ${CUBE_OFFSET_Y}px))` }}>
-                <Logo3D variant={LOGO_VARIANT} size={CUBE_SIZE} zoom={cubeZoom} bgHex={theme === "dark" ? "#0e0e10" : "#f9fafb"} lineHex={theme === "dark" ? "#58585e" : "#c0c0c8"} />
+                <Logo3D variant={LOGO_VARIANT} size={CUBE_SIZE} zoom={cubeZoom} bgHex={theme === "dark" ? "#0e0e10" : "#f3f4f6"} lineHex={theme === "dark" ? "#58585e" : "#c0c0c8"} />
               </div>
             </div>
           </div>
 
           {/* Degree buttons */}
-          <div className="pb-16 flex flex-wrap items-center gap-4">
+          <div className="pb-16 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 w-full max-w-7xl">
             {[
               { label: "Data Science and Applications", slug: "data-science-and-applications" },
               { label: "Electronic Systems", slug: "electronic-systems" },
               { label: "Management and Data Science", slug: "management-and-data-science" },
               { label: "Aeronautics and Space Technology", slug: "aeronautics-and-space-technology" },
             ].map((d) => (
-              <Link key={d.slug} to={`/${d.slug}`}>
-                <button className="group relative inline-flex items-center gap-2 px-6 py-3 text-[14px] font-medium bg-foreground text-background transition-all duration-200 hover:bg-foreground/90">
-                  {d.label}
-                  <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+              <Link key={d.slug} to={`/${d.slug}`} className="w-full">
+                <button className="group relative w-full flex items-center justify-between gap-2 px-3 py-4 text-xs xl:text-sm font-medium bg-foreground text-background transition-all duration-200 hover:bg-foreground/90">
+                  <span className="whitespace-nowrap">{d.label}</span>
+                  <ArrowRight className="h-4 w-4 shrink-0 transition-transform group-hover:translate-x-0.5" />
                 </button>
               </Link>
             ))}
@@ -236,7 +236,7 @@ const Landing = () => {
           <p className="text-[13px] uppercase tracking-[0.15em] text-muted-foreground mb-4">
             Built for students
           </p>
-          <h2 className="text-[clamp(1.8rem,3vw,2.5rem)] font-[500] tracking-[-0.03em] text-foreground max-w-[500px] leading-[1.15]">
+          <h2 className="text-[clamp(1.8rem,3vw,2.5rem)] font-[500] tracking-[-0.03em] max-w-[500px] leading-[1.15] bg-gradient-to-r from-zinc-600 via-zinc-950 to-zinc-600 bg-clip-text text-transparent dark:from-zinc-400 dark:via-white dark:to-zinc-400">
             Less guessing.<br />More scoring.
           </h2>
 
@@ -302,7 +302,7 @@ const Landing = () => {
                       )}
                     </div>
                   </div>
-                  <h3 className="text-[15px] font-medium text-foreground mb-2">{feature.title}</h3>
+                  <h3 className="text-[15px] font-medium mb-2 bg-gradient-to-r from-zinc-600 via-zinc-950 to-zinc-600 bg-clip-text text-transparent dark:from-zinc-400 dark:via-white dark:to-zinc-400">{feature.title}</h3>
                   <p className="text-[13px] leading-[1.6] text-muted-foreground">{feature.desc}</p>
                 </div>
               ))}
@@ -352,7 +352,7 @@ const Landing = () => {
       {/* CTA */}
       <section className="relative z-10 pt-32 pb-40 px-6 overflow-hidden">
         <div className="mx-auto max-w-[1200px] text-center relative">
-          <h2 className="text-[clamp(2rem,4vw,3.2rem)] font-[500] tracking-[-0.035em] text-foreground leading-[1.1] mx-auto max-w-[560px]">
+          <h2 className="text-[clamp(2rem,4vw,3.2rem)] font-[500] tracking-[-0.035em] leading-[1.1] mx-auto max-w-[560px] bg-gradient-to-r from-zinc-600 via-zinc-950 to-zinc-600 bg-clip-text text-transparent dark:from-zinc-400 dark:via-white dark:to-zinc-400">
             Your next exam isn't going to prepare itself.
           </h2>
           <p className="mt-5 text-[15px] text-muted-foreground max-w-[400px] mx-auto">
