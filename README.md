@@ -196,7 +196,7 @@ quizzo/
 The marketing home page. Renders a Three.js 3D rotating cube in the hero alongside the QUIZZO wordmark, degree navigation buttons, a live mock of the admin UI, a features section, testimonial, and a CTA. Light/dark theme toggle and auth links are in the nav.
 
 #### `/auth` — Authentication
-Sign-in and sign-up tabs plus a Google OAuth button. The `admin@quizzo` / `123` credential is a hardcoded bypass that sets `localStorage.quizzo_admin = "1"` and redirects directly to `/admin/overview`.
+Sign-in and sign-up tabs plus a Google OAuth button. Admin pages open only for accounts that hold the `admin` role (see [Authentication](#authentication)); there is no shared admin login.
 
 #### `/:slug` — Degree Browser
 Displays all courses for the chosen degree (e.g., `data-science-and-applications`). Segmented controls filter by level (Foundation / Diploma / Degree) and exam type (Quiz 1 / Quiz 2 / End Term). Each course card shows deterministic paper and question counts and links through to its past-paper list. The full course catalog is currently enabled only for the Data Science program.
@@ -283,7 +283,7 @@ Five tabs inside the admin shell:
 | `AppLayout` | Admin page shell. Renders `AppSidebar` on desktop and a `Sheet`-based drawer on mobile. |
 | `AppSidebar` | Sticky left rail with pin/unpin toggle. Collapsed to 56 px when unpinned; hovering expands it over content without reflowing the main column. |
 | `SidebarContent` | Nav items, logo, user avatar, and sign-out button. Shared between desktop rail and mobile sheet. |
-| `ProtectedRoute` | Wraps admin routes. Reads `AuthContext` and `localStorage.quizzo_admin`; redirects to `/auth` when both are absent. |
+| `ProtectedRoute` | Wraps protected routes. Redirects to `/auth` without a Supabase session; with `requireAdmin` it also needs `AuthContext.isAdmin` and otherwise redirects to `/`. |
 
 ### Navigation
 
@@ -343,10 +343,17 @@ Five tabs inside the admin shell:
 - Email/password sign-up (min 6 chars)
 - Email/password sign-in
 - (Google OAuth removed for now — pending a direct Supabase OAuth integration)
-- Hardcoded admin bypass: `admin@quizzo` / `123` → sets `localStorage.quizzo_admin = "1"`, skips Supabase
+
+**Admin access:**
+Admin pages require the `admin` role in `public.user_roles`. `AuthContext` resolves it on the server with the `has_role` RPC (a `SECURITY DEFINER` function), and the same check guards every admin-only row-level security policy, so the UI and the database always agree. There is no hardcoded admin login. To make an account an admin, run this in the Supabase SQL editor:
+
+```sql
+insert into public.user_roles (user_id, role)
+values ('<auth user id>', 'admin');
+```
 
 **Route Guard:**
-`ProtectedRoute` checks both `AuthContext.user` and `localStorage.quizzo_admin`. Either being truthy grants access.
+`ProtectedRoute` requires a Supabase session. Routes wrapped with `requireAdmin` also require `isAdmin`; everyone else is redirected to `/`.
 
 ---
 
@@ -570,7 +577,7 @@ Public
   /:slug/:courseSlug/report      Post-session report
   /profile                       User profile (redirects if not authed)
 
-Protected (requires auth or admin bypass)
+Protected (signed-in account with the admin role)
   /admin/overview                Dashboard
   /admin/create                  Paper builder
   /admin/bank                    Question bank
