@@ -53,7 +53,7 @@ QUIZZO is an academic exam practice and management platform built for **IIT Madr
   - Session restored on mount via `getSession()`
   - Realtime sync via `onAuthStateChange`
   - Profile auto-fetched from `public.profiles` on login
-  - Admin bypass: `admin@quizzo` / `123` sets `localStorage.quizzo_admin = "1"`
+  - Admin access: `admin` role in `user_roles`, checked with the `has_role` RPC (the early hardcoded login was removed)
 - Google OAuth via Lovable Cloud Auth (`@lovable.dev/cloud-auth-js`)
 
 ### Phase 3 — Database Schema (9 Migrations)
@@ -93,7 +93,7 @@ Security hardening (migration 2026-07-19):
 ### Phase 5 — App Shell & Layout System
 - `AppLayout` — admin page shell with `AppSidebar` (desktop) + Sheet drawer (mobile)
 - `AppSidebar` — sticky left rail with pin/unpin toggle; hover expands without reflowing main column
-- `ProtectedRoute` — auth guard checking `AuthContext.user` and `localStorage.quizzo_admin`
+- `ProtectedRoute`: auth guard that needs a session, plus `isAdmin` for admin routes
 - `NavAuthArea` — top-right auth widget (Sign In link / avatar dropdown)
 - `Logo3D` — Three.js animated wireframe cube for landing hero
 - `StackedLogo` — SVG "Q" brand mark
@@ -103,7 +103,7 @@ Security hardening (migration 2026-07-19):
 
 ### Phase 6 — Public Pages
 - **Landing** (`/`) — hero with 3D cube, degree navigation buttons, admin UI mock preview, features section, student testimonial, CTA. All copy written for QUIZZO exam platform (not bug tracker).
-- **Auth** (`/auth`) — Google OAuth + email/password sign-in/sign-up; admin bypass
+- **Auth** (`/auth`): Google OAuth + email/password sign-in/sign-up
 - **Degree Browser** (`/:slug`) — 4 degree programs; segmented level + exam type filters; 27 courses with subject icons; deterministic paper/question counts
 - **Course Detail** (`/:slug/:courseSlug`) — past-paper list with term/year filters; Exam Mode & Practice Mode launch; WhatsApp share
 - **Profile** (`/profile`) — edit name/track, view PYQ history, change password, log out
