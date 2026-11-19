@@ -5,7 +5,7 @@ import { listCourses, type CourseSummary } from "@/lib/pyq-read";
 import { iconForCourse } from "@/data/course-icons";
 
 import { ArrowLeft, ArrowRight, Moon, Sun } from "lucide-react";
-import { useTheme } from "next-themes";
+import { useTheme } from "@/hooks/use-theme-transition";
 import { StackedLogo } from "@/components/StackedLogo";
 import { NavAuthArea } from "@/components/NavAuthArea";
 

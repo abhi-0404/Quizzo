@@ -1,7 +1,7 @@
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { useMemo, useState } from "react";
 import { ArrowLeft, Moon, Sun } from "lucide-react";
-import { useTheme } from "next-themes";
+import { useTheme } from "@/hooks/use-theme-transition";
 import { StackedLogo } from "@/components/StackedLogo";
 import { NavAuthArea } from "@/components/NavAuthArea";
 import { useQuery } from "@tanstack/react-query";

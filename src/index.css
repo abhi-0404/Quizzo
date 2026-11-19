@@ -511,3 +511,30 @@ body.is-scrolling .ghost-scroll {
   overflow-x: auto;
   overflow-y: hidden;
 }
+
+/* ---------------------------------------------------------------------------
+   Theme switch: circular reveal from the top-right corner (View Transitions API).
+   The JS hook (src/hooks/use-theme-transition.ts) animates the clip-path; here we
+   drop the default crossfade so only the reveal is visible.
+--------------------------------------------------------------------------- */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+
+::view-transition-old(root) {
+  z-index: 1;
+}
+
+::view-transition-new(root) {
+  z-index: 2;
+}
+
+/* Freeze per-element colour transitions while the theme flips, so the revealed
+   area shows the final colours instead of fading through intermediate ones. */
+html.theme-switching *,
+html.theme-switching *::before,
+html.theme-switching *::after {
+  transition: none !important;
+}

@@ -7,7 +7,7 @@ import {
   LogOut,
   ChevronDown,
 } from "lucide-react";
-import { useTheme } from "next-themes";
+import { useTheme } from "@/hooks/use-theme-transition";
 import { toast } from "sonner";
 import { StackedLogo } from "@/components/StackedLogo";
 import { NavAuthArea } from "@/components/NavAuthArea";

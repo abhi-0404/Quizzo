@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { ChevronLeft, Search, LayoutGrid, List, Moon, Sun, Clock } from "lucide-react";
 
-import { useTheme } from "next-themes";
+import { useTheme } from "@/hooks/use-theme-transition";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Cell,
   PieChart, Pie, LineChart, Line, AreaChart, Area, Tooltip, ResponsiveContainer,

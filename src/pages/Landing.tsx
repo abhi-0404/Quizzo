@@ -1,6 +1,6 @@
 import { Link } from "react-router-dom";
 import { ArrowRight, Moon, Sun } from "lucide-react";
-import { useTheme } from "next-themes";
+import { useTheme } from "@/hooks/use-theme-transition";
 import { lazy, Suspense, useEffect, useState } from "react";
 
 import { StackedLogo } from "@/components/StackedLogo";

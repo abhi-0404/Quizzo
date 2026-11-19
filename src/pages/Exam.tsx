@@ -4,7 +4,7 @@ import {
   Calculator as CalculatorIcon, Camera, ChevronDown, ChevronLeft, ChevronRight, Eraser,
   Flag, Keyboard, LayoutGrid, MessageSquareWarning, Moon, MoreHorizontal, NotebookPen, RotateCcw, Send, Sun, WifiOff, X,
 } from "lucide-react";
-import { useTheme } from "next-themes";
+import { useTheme } from "@/hooks/use-theme-transition";
 import { toast } from "sonner";
 import { useQuery } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
