@@ -14,6 +14,193 @@ export type Database = {
   }
   public: {
     Tables: {
+      academic_schedule: {
+        Row: {
+          assessments: Json
+          created_at: string
+          id: string
+          term: string
+          updated_at: string
+          year: number
+        }
+        Insert: {
+          assessments?: Json
+          created_at?: string
+          id: string
+          term: string
+          updated_at?: string
+          year: number
+        }
+        Update: {
+          assessments?: Json
+          created_at?: string
+          id?: string
+          term?: string
+          updated_at?: string
+          year?: number
+        }
+        Relationships: []
+      }
+      question_reports: {
+        Row: {
+          created_at: string
+          id: string
+          note: string
+          question_id: string
+          reason: string
+          status: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          note?: string
+          question_id: string
+          reason: string
+          status?: string
+          user_id?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          note?: string
+          question_id?: string
+          reason?: string
+          status?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "question_reports_question_id_fkey"
+            columns: ["question_id"]
+            isOneToOne: false
+            referencedRelation: "questions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      answer_reviews: {
+        Row: {
+          created_at: string
+          decided_at: string | null
+          decided_by: string | null
+          id: string
+          note: string
+          question_id: string
+          reviewer_id: string
+          status: string
+          suggested_correct: Json | null
+          suggested_numerical: string | null
+          updated_at: string
+          verdict: string
+        }
+        Insert: {
+          created_at?: string
+          decided_at?: string | null
+          decided_by?: string | null
+          id?: string
+          note?: string
+          question_id: string
+          reviewer_id?: string
+          status?: string
+          suggested_correct?: Json | null
+          suggested_numerical?: string | null
+          updated_at?: string
+          verdict: string
+        }
+        Update: {
+          created_at?: string
+          decided_at?: string | null
+          decided_by?: string | null
+          id?: string
+          note?: string
+          question_id?: string
+          reviewer_id?: string
+          status?: string
+          suggested_correct?: Json | null
+          suggested_numerical?: string | null
+          updated_at?: string
+          verdict?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "answer_reviews_question_id_fkey"
+            columns: ["question_id"]
+            isOneToOne: false
+            referencedRelation: "questions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      paper_solutions: {
+        Row: {
+          author_id: string
+          created_at: string
+          decided_at: string | null
+          decided_by: string | null
+          file_name: string
+          id: string
+          kind: string
+          mime: string | null
+          note: string
+          paper_id: string
+          question_id: string | null
+          size_bytes: number | null
+          status: string
+          storage_path: string | null
+          video_url: string | null
+        }
+        Insert: {
+          author_id?: string
+          created_at?: string
+          decided_at?: string | null
+          decided_by?: string | null
+          file_name: string
+          id?: string
+          kind?: string
+          mime?: string | null
+          note?: string
+          paper_id: string
+          question_id?: string | null
+          size_bytes?: number | null
+          status?: string
+          storage_path?: string | null
+          video_url?: string | null
+        }
+        Update: {
+          author_id?: string
+          created_at?: string
+          decided_at?: string | null
+          decided_by?: string | null
+          file_name?: string
+          id?: string
+          kind?: string
+          mime?: string | null
+          note?: string
+          paper_id?: string
+          question_id?: string | null
+          size_bytes?: number | null
+          status?: string
+          storage_path?: string | null
+          video_url?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "paper_solutions_paper_id_fkey"
+            columns: ["paper_id"]
+            isOneToOne: false
+            referencedRelation: "papers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "paper_solutions_question_id_fkey"
+            columns: ["question_id"]
+            isOneToOne: false
+            referencedRelation: "questions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       activity_log: {
         Row: {
           action: string
@@ -306,6 +493,7 @@ export type Database = {
       }
       profiles: {
         Row: {
+          academic_track: string | null
           avatar_url: string | null
           created_at: string
           full_name: string
@@ -315,6 +503,7 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          academic_track?: string | null
           avatar_url?: string | null
           created_at?: string
           full_name?: string
@@ -324,6 +513,7 @@ export type Database = {
           user_id: string
         }
         Update: {
+          academic_track?: string | null
           avatar_url?: string | null
           created_at?: string
           full_name?: string
@@ -746,6 +936,72 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      is_reviewer: {
+        Args: { _uid: string }
+        Returns: boolean
+      }
+      contributor_papers: {
+        Args: never
+        Returns: Json
+      }
+      admin_list_contributors: {
+        Args: never
+        Returns: Json
+      }
+      admin_add_contributor: {
+        Args: { p_email: string }
+        Returns: string
+      }
+      admin_remove_contributor: {
+        Args: { p_user_id: string }
+        Returns: undefined
+      }
+      admin_review_inbox: {
+        Args: never
+        Returns: Json
+      }
+      admin_decide_review: {
+        Args: { p_accept: boolean; p_expected_updated_at?: string; p_review_id: string }
+        Returns: undefined
+      }
+      admin_decide_solution: {
+        Args: { p_approve: boolean; p_id: string }
+        Returns: undefined
+      }
+      admin_overview: {
+        Args: never
+        Returns: Json
+      }
+      admin_performance: {
+        Args: never
+        Returns: Json
+      }
+      delete_my_account: {
+        Args: never
+        Returns: undefined
+      }
+      get_answer_key: {
+        Args: { p_paper_id: string }
+        Returns: {
+          correct: Json
+          numerical_answer: string
+          position: number
+          question_id: string
+        }[]
+      }
+      reveal_answer: {
+        Args: { p_question_id: string }
+        Returns: Json
+      }
+      submit_attempt: {
+        Args: {
+          p_answers: Json
+          p_duration_seconds: number
+          p_mode: Database["public"]["Enums"]["attempt_mode"]
+          p_paper_id: string
+        }
+        Returns: string
+      }
       get_team_members: {
         Args: never
         Returns: {
@@ -766,7 +1022,7 @@ export type Database = {
     }
     Enums: {
       answer_status: "correct" | "incorrect" | "skipped"
-      app_role: "admin" | "moderator" | "user"
+      app_role: "admin" | "moderator" | "user" | "contributor"
       attempt_mode: "exam" | "practice"
       bug_severity: "critical" | "high" | "medium" | "low"
       bug_status:
@@ -908,7 +1164,7 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
-      app_role: ["admin", "moderator", "user"],
+      app_role: ["admin", "moderator", "user", "contributor"],
       bug_severity: ["critical", "high", "medium", "low"],
       bug_status: [
         "new",
