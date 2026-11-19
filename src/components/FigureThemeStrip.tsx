@@ -11,8 +11,9 @@ import type { QuestionAsset } from "@/data/questions";
  * and never checks only the half they happen to be sitting in.
  */
 
-/** Mirrors the `dark:invert dark:hue-rotate-180` UniversalRenderer applies. */
-const DARK_FILTER = "invert hue-rotate-180";
+/** Mirrors what UniversalRenderer applies in each theme (filter plus blend). */
+const DARK_FILTER = "[filter:brightness(1.1)_contrast(1.25)_invert(1)_hue-rotate(180deg)] mix-blend-screen";
+const LIGHT_BLEND = "[filter:brightness(1.1)_contrast(1.25)] mix-blend-multiply";
 
 const CELL = "flex min-h-[72px] flex-1 items-center justify-center overflow-hidden p-3";
 const CAPTION = "border-b border-border px-2 py-1 text-[11px] text-muted-foreground";
@@ -81,7 +82,7 @@ export function FigureThemeStrip({
                 <div className={CAPTION}>Light</div>
                 <div className={`${CELL} bg-white`}>
                   {asset.src ? (
-                    <img src={asset.src} alt={asset.alt} className={IMG} />
+                    <img src={asset.src} alt={asset.alt} className={`${IMG} ${LIGHT_BLEND}`} />
                   ) : (
                     <Missing tone="onLight" />
                   )}

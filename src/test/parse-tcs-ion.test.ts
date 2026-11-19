@@ -101,6 +101,8 @@ describe("parseTcsIonPaper — question counts", () => {
   it("drops the per-section declaration prompt", () => {
     // One zero-mark "THIS IS QUESTION…" consent item opens each of the 15 sections.
     expect(paper.stats.declarations).toBe(15);
+    // None of them carries shared reference data in this paper.
+    expect(paper.stats.references).toBe(0);
   });
 
   it("produces 211 top-level questions, absorbing comprehension children", () => {
@@ -183,11 +185,32 @@ describe("parseTcsIonPaper — answer keys", () => {
 });
 
 describe("parseTcsIonPaper — review flags", () => {
-  it("flags only the two known fidelity gaps, on 5 questions", () => {
-    expect(paper.stats.flagged).toBe(5);
+  it("flags only the known fidelity gaps and the pen-and-paper items, on 11 questions", () => {
+    // 5 answer-format gaps plus 6 pen-and-paper attestations (PSOSM and DVD).
+    expect(paper.stats.flagged).toBe(11);
     const issues = allQuestions.flatMap((q) => q.issues);
     for (const i of issues) {
-      expect(i).toMatch(/only the first is stored|not numeric/);
+      expect(i).toMatch(/only the first is stored|not numeric|pen-and-paper/);
+    }
+  });
+
+  it("flags every pen-and-paper attestation instead of trusting its fake answer key", () => {
+    // These sections are written on paper; the online item only records "I have
+    // written answers on the answer sheets" (marked correct) or "Not applicable".
+    const pen = allQuestions.filter((q) => q.options.includes("I have written answers on the answer sheets"));
+    expect(pen.map((q) => q.id).sort()).toEqual(
+      [
+        "tcs-6406531525463",
+        "tcs-6406531525464",
+        "tcs-6406531525465",
+        "tcs-6406531525467",
+        "tcs-6406531525468",
+        "tcs-6406531525469",
+      ].sort()
+    );
+    for (const q of pen) {
+      expect(q.isValid).toBe(false);
+      expect(q.issues.join(" ")).toMatch(/pen-and-paper/);
     }
   });
 
@@ -345,5 +368,250 @@ describe("attachAssets", () => {
       .filter((q) => q.assets.length > 0);
     expect(withAssets.length).toBeGreaterThan(0);
     for (const q of withAssets) for (const a of q.assets) expect(a.src).toBe(png);
+  });
+});
+
+/* -- Focused regressions from the QIV4 26 Oct 2025 audit ---------------------
+ *
+ * Built from hand-written lines that reproduce the real layout (positions as
+ * pdf-extract reports them for that paper), so they run without the PDF. */
+
+const W = 595.5;
+const H = 842.25;
+
+function row(page: number, y: number, text: string, x = 22.9) {
+  const x2 = x + text.length * 6;
+  return { page, x, y, x2, y2: y + 12, text, pieces: [{ x, x2, text }] };
+}
+
+/** `<id>.` then the option content, as separate pieces, the way an option row arrives. */
+function option(page: number, y: number, id: string, text: string) {
+  return {
+    page,
+    x: 23.6,
+    y,
+    x2: 134 + text.length * 6,
+    y2: y + 12,
+    text: `${id}. ${text}`,
+    pieces: [
+      { x: 23.6, x2: 115.9, text: `${id}.` },
+      { x: 115.9, x2: 134, text: " " },
+      { x: 134, x2: 134 + text.length * 6, text },
+    ],
+  };
+}
+
+function synthetic(lines: ReturnType<typeof row>[], correct: string[], wrong: string[]): PdfExtract {
+  const optionColour: Record<string, string> = {};
+  for (const id of correct) optionColour[id] = "#008000";
+  for (const id of wrong) optionColour[id] = "#ff0000";
+  const pages = Math.max(...lines.map((l) => l.page)) + 1;
+  return {
+    lines,
+    optionColour,
+    pageCount: pages,
+    pageHeight: Array(pages).fill(H),
+    pageWidth: Array(pages).fill(W),
+  };
+}
+
+const heading = (y: number) => [row(0, y, "CT", 290), row(0, y + 27, "Section Id : 640653106212", 20.6)];
+
+describe("parseTcsIonPaper - figure position (QIV4 audit)", () => {
+  it("keeps a passage figure above the text that follows it", () => {
+    // Statistics1 Q27-28: the data table is drawn between the label and
+    // "Based on the above data", and used to be moved below that sentence.
+    const extract = synthetic(
+      [
+        ...heading(20),
+        row(0, 100, "Question Id : 6406531531106 Question Type : COMPREHENSION Sub Question Shuffling"),
+        row(0, 120, "Allowed : No Group Comprehension Questions : No Question Pattern Type : NonMatrix"),
+        row(0, 140, "Question Numbers : (27 to 27)"),
+        row(0, 160, "Question Label : Comprehension"),
+        row(0, 330, "Based on the above data, answer the given subquestions."),
+        row(0, 350, "Sub questions"),
+        row(0, 380, "Question Number : 27 Question Id : 6406531531107 Question Type : SA"),
+        row(0, 400, "Correct Marks : 2"),
+        row(0, 420, "Question Label : Short Answer Question"),
+        row(0, 440, "What is the mean?"),
+        row(0, 460, "Response Type : Numeric"),
+        row(0, 480, "Answers Type : Equal"),
+        row(0, 500, "Possible Answers :"),
+        row(0, 520, "256"),
+      ],
+      [],
+      []
+    );
+    const q = parseTcsIonPaper(extract).courses[0].questions[0];
+    expect(q.type).toBe("comprehension");
+    expect(q.passage).toBe(
+      "![Question figure](asset-f1)\n\nBased on the above data, answer the given subquestions."
+    );
+    expect(q.subQuestions[0].numericalAnswer).toBe("256");
+  });
+
+  it("keeps a stem figure between the two lines it separates", () => {
+    // English1 Q117: instruction, then the matching table, then "[1] Worldly".
+    const extract = synthetic(
+      [
+        ...heading(20),
+        row(0, 100, "Question Number : 117 Question Id : 6406531531209 Question Type : MCQ"),
+        row(0, 120, "Correct Marks : 2"),
+        row(0, 140, "Question Label : Multiple Choice Question"),
+        row(0, 160, "Based on your reading of the text, match the adjectives to their fitting nouns."),
+        row(0, 330, "[1] Worldly"),
+        row(0, 350, "Options :"),
+        option(0, 370, "6406535125171", "Heritage"),
+        option(0, 390, "6406535125172", "Communication"),
+        option(0, 410, "6406535125173", "Means"),
+      ],
+      ["6406535125173"],
+      ["6406535125171", "6406535125172"]
+    );
+    const q = parseTcsIonPaper(extract).courses[0].questions[0];
+    expect(q.stem).toBe(
+      "Based on your reading of the text, match the adjectives to their fitting nouns.\n\n" +
+        "![Question figure](asset-f1)\n\n[1] Worldly"
+    );
+    expect(q.correct).toEqual([2]);
+  });
+
+  it("still writes text-then-figure stems exactly as before", () => {
+    const extract = synthetic(
+      [
+        ...heading(20),
+        row(0, 100, "Question Number : 1 Question Id : 1 Question Type : MCQ"),
+        row(0, 120, "Correct Marks : 1"),
+        row(0, 140, "Question Label : Multiple Choice Question"),
+        row(0, 160, "Match Col A with Col B:"),
+        row(0, 300, "Options :"),
+        option(0, 320, "6406535125455", "A"),
+        option(0, 340, "6406535125456", "B"),
+      ],
+      ["6406535125455"],
+      ["6406535125456"]
+    );
+    const q = parseTcsIonPaper(extract).courses[0].questions[0];
+    expect(q.stem).toBe("Match Col A with Col B:\n\n![Question figure](asset-f1)");
+  });
+});
+
+describe("parseTcsIonPaper - shared reference material (QIV4 audit)", () => {
+  const refExtract = synthetic(
+    [
+      ...heading(20),
+      // The declaration: dropped, and not reference material.
+      row(0, 100, "Question Number : 1 Question Id : 6406531531080 Question Type : MCQ"),
+      row(0, 120, "Correct Marks : 0"),
+      row(0, 140, "Question Label : Multiple Choice Question"),
+      row(0, 160, "THIS IS QUESTION PAPER FOR THE SUBJECT \"FOUNDATION LEVEL : COMPUTATIONAL THINKING\""),
+      row(0, 180, "Options :"),
+      option(0, 200, "6406535124799", "YES"),
+      option(0, 220, "6406535124800", "NO"),
+      // CT's "Library" dataset: a zero-mark item whose stem is the data table.
+      row(0, 260, "Question Number : 2 Question Id : 6406531531081 Question Type : MCQ"),
+      row(0, 280, "Correct Marks : 0"),
+      row(0, 300, "Question Label : Multiple Choice Question"),
+      row(0, 600, "Options :"),
+      option(0, 620, "6406535124801", "Useful Data has been mentioned above."),
+      option(0, 640, "6406535124802", "This data attachment is just for a reference & not for an evaluation."),
+      row(0, 680, "Question Number : 3 Question Id : 6406531531086 Question Type : MCQ"),
+      row(0, 700, "Correct Marks : 4"),
+      row(0, 720, "Question Label : Multiple Choice Question"),
+      row(0, 740, "The following pseudocode is executed using the \"Library\" dataset."),
+      row(0, 760, "Options :"),
+      option(0, 780, "6406535124810", "No errors"),
+      option(0, 800, "6406535124811", "Line 9"),
+    ],
+    ["6406535124799", "6406535124801", "6406535124810"],
+    ["6406535124800", "6406535124802", "6406535124811"]
+  );
+  const refPaper = parseTcsIonPaper(refExtract);
+  const q = refPaper.courses[0].questions[0];
+  const figureId = q.passage.match(/asset-(f\d+)/)?.[1] ?? "";
+
+  it("attaches the dataset to the questions after it instead of dropping it", () => {
+    expect(refPaper.stats.declarations).toBe(2);
+    expect(refPaper.stats.references).toBe(1);
+    expect(refPaper.stats.questions).toBe(1);
+    expect(q.passage).toBe(`![Question figure](asset-${figureId})`);
+    expect(q.assets.map((a) => a.id)).toContain(figureId);
+    expect(refPaper.regions[figureId]).toMatchObject({ page: 0, y: 317, y2: 600 });
+    expect(q.stem).toContain("Library");
+    expect(q.isValid).toBe(true);
+  });
+
+  it("never turns the consent declaration into a passage", () => {
+    expect(q.passage).not.toMatch(/THIS IS QUESTION PAPER/);
+  });
+
+  it("carries the dataset through narrowToCourse and attachAssets", async () => {
+    const one = narrowToCourse(refPaper, 0);
+    expect(one.regions[figureId]).toBeDefined();
+    await attachAssets(one, { cropRegion: async () => "data:image/png;base64,AAAA" });
+    const copy = one.courses[0].questions[0];
+    expect(copy.passage).toContain(`asset-${figureId}`);
+    expect(copy.assets.find((a) => a.id === figureId)?.src).toContain("data:");
+  });
+});
+
+describe("parseTcsIonPaper - pen-and-paper items (QIV4 audit)", () => {
+  it("flags an attestation item instead of publishing it as a 24-mark MCQ", () => {
+    const extract = synthetic(
+      [
+        ...heading(20),
+        row(0, 100, "Question Number : 152 Question Id : 6406531531246 Question Type : MCQ"),
+        row(0, 120, "Correct Marks : 24"),
+        row(0, 140, "Question Label : Multiple Choice Question"),
+        row(0, 600, "Options :"),
+        option(0, 620, "6406535125303", "I have written answers on the answer sheets"),
+        option(0, 640, "6406535125304", "Not applicable"),
+      ],
+      ["6406535125303"],
+      ["6406535125304"]
+    );
+    const p = parseTcsIonPaper(extract);
+    const q = p.courses[0].questions[0];
+    expect(q.isValid).toBe(false);
+    expect(q.issues).toHaveLength(1);
+    expect(q.issues[0]).toMatch(/pen-and-paper/);
+    expect(p.stats.flagged).toBe(1);
+  });
+});
+
+describe("parseTcsIonPaper - wrapped Question Paper Name (QIV4 audit)", () => {
+  it("joins a value the header table wrapped around its label", () => {
+    // The real layout: the value's first line sits above the label's baseline,
+    // the rest below it, and the label row itself carries no value.
+    const extract = synthetic(
+      [
+        row(0, 207, "IIT M IMPROVEMENT AN EXAM QIV4 26 Oct", 330.1),
+        {
+          page: 0,
+          x: 20.6,
+          y: 215,
+          x2: 143,
+          y2: 227,
+          text: "Question Paper Name : ",
+          pieces: [
+            { x: 20.6, x2: 140, text: "Question Paper Name :" },
+            { x: 140, x2: 143, text: " " },
+          ],
+        },
+        row(0, 224, "2025", 330.1),
+        row(0, 243, "Subject Name : 2025 Oct26: IIT M AN EXAM QIV4", 20.6),
+      ],
+      [],
+      []
+    );
+    const p = parseTcsIonPaper(extract);
+    expect(p.contentPaperName).toBe("IIT M IMPROVEMENT AN EXAM QIV4 26 Oct 2025");
+    expect(parsePaperMetaFromText(p.contentPaperName!)).toEqual({
+      programme: "improvement",
+      slot: "an",
+      code: "QIV4",
+      codeFamily: "QIV",
+      date: "2025-10-26",
+    });
   });
 });

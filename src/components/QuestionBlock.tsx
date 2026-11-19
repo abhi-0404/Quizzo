@@ -14,7 +14,7 @@ import {
 
 /** Solid green treatment for a revealed correct answer. */
 export const CORRECT_TREATMENT =
-  "border-emerald-500 bg-emerald-50 dark:bg-[#0F1A14] text-emerald-800 dark:text-emerald-300";
+  "border-success bg-success/10 text-success";
 
 export function OptionRow({
   assets, letter, text, correct, showAnswers, round,
@@ -36,10 +36,10 @@ export function OptionRow({
         onChange={() => undefined}
         tabIndex={-1}
         aria-label={`Option ${letter}${reveal ? " — correct" : ""}`}
-        className="shrink-0 self-center h-4 w-4 accent-emerald-600"
+        className="shrink-0 self-center h-4 w-4 accent-success"
       />
       <UniversalRenderer
-        className={`text-[13px] leading-relaxed option-figure-scale ${reveal ? "text-emerald-700 dark:text-emerald-300 font-medium" : ""}`}
+        className={`text-[13px] leading-relaxed option-figure-scale ${reveal ? "text-success font-medium" : ""}`}
         content={text}
         assets={assets}
       />

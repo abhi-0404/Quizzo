@@ -485,6 +485,17 @@ export function PaperSection({
       toast({ title: "Empty paper", description: "Add at least one question before publishing.", variant: "destructive" });
       return;
     }
+    if (invalidCount > 0) {
+      // Flagged questions (marked in red) are not real questions yet: an
+      // answer-sheet attestation, a missing key, a broken option list.
+      // Publishing them would put a wrong answer key in front of students.
+      toast({
+        title: "Fix the flagged questions first",
+        description: `${invalidCount} question${invalidCount === 1 ? " is" : "s are"} marked in red. Fix or delete ${invalidCount === 1 ? "it" : "them"}, then publish.`,
+        variant: "destructive",
+      });
+      return;
+    }
     if (!universal.examDate) {
       toast({ title: "Fill in the required field.", description: "Set the exam date in Exam Context Settings before publishing.", variant: "destructive" });
       return;
@@ -539,7 +550,7 @@ export function PaperSection({
               <button key={m.key} onClick={() => setDraftField("inputMode", m.key)}
                 className={`rounded px-2.5 py-1 text-[11.5px] font-medium transition-colors ${
                   active
-                    ? "bg-gray-900 text-white dark:bg-gray-100 dark:text-black"
+                    ? "bg-primary text-primary-foreground"
                     : "text-muted-foreground hover:bg-secondary hover:text-foreground"
                 }`}>
                 {m.label}
@@ -551,14 +562,14 @@ export function PaperSection({
 
       {editingIssues.length > 0 && (
         <div className="px-4 py-3 border-b border-border">
-          <div className="border border-red-200 dark:border-red-900 bg-red-50 dark:bg-[#1A0F0F] rounded-md px-3 py-2">
-            <p className="flex items-center gap-1.5 text-[12px] font-medium text-red-600 dark:text-red-400 mb-1">
+          <div className="border border-destructive/30 bg-destructive/10 rounded-md px-3 py-2">
+            <p className="flex items-center gap-1.5 text-[12px] font-medium text-destructive mb-1">
               <AlertTriangle className="h-3.5 w-3.5" />
               Needs review — {editingIssues.length} issue{editingIssues.length === 1 ? "" : "s"}
             </p>
             <ul className="list-disc pl-5 space-y-0.5">
               {editingIssues.map((issue, i) => (
-                <li key={i} className="text-[12px] text-red-600 dark:text-red-400">{issue}</li>
+                <li key={i} className="text-[12px] text-destructive">{issue}</li>
               ))}
             </ul>
           </div>
@@ -578,7 +589,7 @@ export function PaperSection({
               <button key={t.key} type="button" onClick={() => changeType(t.key)} title={t.label}
                 className={`rounded px-2.5 py-1 text-[11.5px] font-medium transition-colors ${
                   active
-                    ? "bg-emerald-500 text-white"
+                    ? "bg-success text-success-foreground"
                     : "text-muted-foreground hover:bg-secondary hover:text-foreground"
                 }`}>
                 {t.label}
@@ -591,7 +602,7 @@ export function PaperSection({
             <label htmlFor="q-marks" className="text-[11.5px] text-muted-foreground">Marks</label>
             <input id="q-marks" type="number" min={1} max={100} value={draft.marks}
               onChange={(e) => setDraftField("marks", Number(e.target.value))}
-              className="h-7 w-14 rounded-md border border-border bg-card px-1.5 text-center text-[12px] text-foreground focus:outline-none focus:border-gray-400 dark:focus:border-gray-600 transition-colors" />
+              className="h-7 w-14 rounded-md border border-border bg-card px-1.5 text-center text-[12px] text-foreground focus:outline-none focus:border-ring transition-colors" />
           </div>
         )}
       </div>
@@ -605,7 +616,7 @@ export function PaperSection({
             onChange={(e) => setLatexSource(e.target.value)}
             rows={14} spellCheck={false}
             placeholder={"\\begin{question}\n  What is the median of $4, 8, 15, 16, 23, 42$?\n  \\begin{choices}\n    \\choice 11.5\n    \\correctchoice 15.5\n  \\end{choices}\n\\end{question}"}
-            className="w-full rounded-md border border-border bg-card px-3 py-2 font-mono text-[12.5px] leading-relaxed text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-gray-400 dark:focus:border-gray-600 transition-colors resize-y" />
+            className="w-full rounded-md border border-border bg-card px-3 py-2 font-mono text-[12.5px] leading-relaxed text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-ring transition-colors resize-y" />
         </div>
       ) : (
         draft.type === "comprehension" ? (
@@ -635,7 +646,7 @@ export function PaperSection({
                       <p className="text-[12px] font-medium">Sub-Question {si + 1}</p>
                       <button type="button" onClick={() => removeSubQuestion(sq.id)}
                         aria-label={`Remove sub-question ${si + 1}`} title="Remove sub-question"
-                        className="h-6 w-6 inline-flex items-center justify-center rounded text-gray-400 hover:text-red-500 hover:bg-secondary transition-colors">
+                        className="h-6 w-6 inline-flex items-center justify-center rounded text-muted-foreground hover:text-destructive hover:bg-secondary transition-colors">
                         <X className="h-3.5 w-3.5" />
                       </button>
                     </div>
@@ -648,7 +659,7 @@ export function PaperSection({
                             <button key={t.key} type="button" onClick={() => changeSubType(sq.id, t.key)} title={t.label}
                               className={`rounded px-2.5 py-1 text-[11px] font-medium transition-colors ${
                                 sq.type === t.key
-                                  ? "bg-emerald-500 text-white"
+                                  ? "bg-success text-success-foreground"
                                   : "text-muted-foreground hover:bg-secondary hover:text-foreground"
                               }`}>
                               {t.label}
@@ -660,7 +671,7 @@ export function PaperSection({
                           <input type="number" min={1} max={100} value={sq.marks}
                             onChange={(e) => updateSubQuestion(sq.id, { marks: Number(e.target.value) })}
                             aria-label={`Sub-question ${si + 1} marks`}
-                            className="h-7 w-14 rounded-md border border-border bg-card px-1.5 text-center text-[12px] text-foreground focus:outline-none focus:border-gray-400 dark:focus:border-gray-600 transition-colors" />
+                            className="h-7 w-14 rounded-md border border-border bg-card px-1.5 text-center text-[12px] text-foreground focus:outline-none focus:border-ring transition-colors" />
                         </div>
                       </div>
 
@@ -693,8 +704,8 @@ export function PaperSection({
                                       isSubSingle(sq.type) ? "rounded-full" : "rounded"
                                     } ${
                                       marked
-                                        ? "border-emerald-500 bg-emerald-500 text-white"
-                                        : "border-border bg-card text-muted-foreground hover:border-emerald-500"
+                                        ? "border-success bg-success text-success-foreground"
+                                        : "border-border bg-card text-muted-foreground hover:border-success"
                                     }`}>
                                     {marked ? <Check className="h-3 w-3" /> : String.fromCharCode(65 + i)}
                                   </button>
@@ -743,7 +754,7 @@ export function PaperSection({
               </div>
 
               <button type="button" onClick={addSubQuestion}
-                className="mt-3 inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[12px] font-medium text-emerald-600 dark:text-emerald-500 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
+                className="mt-3 inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[12px] font-medium text-success hover:bg-secondary transition-colors">
                 <Plus className="h-3.5 w-3.5" /> Add Sub-Question
               </button>
             </div>
@@ -779,8 +790,8 @@ export function PaperSection({
                             isSingleAnswer(draft.type) ? "rounded-full" : "rounded"
                           } ${
                             marked
-                              ? "border-emerald-500 bg-emerald-500 text-white"
-                              : "border-border bg-card text-muted-foreground hover:border-emerald-500"
+                              ? "border-success bg-success text-success-foreground"
+                              : "border-border bg-card text-muted-foreground hover:border-success"
                           }`}>
                           {marked ? <Check className="h-3.5 w-3.5" /> : String.fromCharCode(65 + i)}
                         </button>
@@ -858,7 +869,7 @@ export function PaperSection({
             {level} · {totalQuestions} question{totalQuestions === 1 ? "" : "s"} · {totalMarks} marks
           </span>
           {invalidCount > 0 && (
-            <span className="inline-flex shrink-0 items-center gap-1 rounded border border-red-200 dark:border-red-900 bg-red-50 dark:bg-[#1A0F0F] px-2 py-0.5 text-[11px] font-medium text-red-600 dark:text-red-400">
+            <span className="inline-flex shrink-0 items-center gap-1 rounded border border-destructive/30 bg-destructive/10 px-2 py-0.5 text-[11px] font-medium text-destructive">
               <AlertTriangle className="h-3 w-3" />
               {invalidCount}
             </span>
@@ -866,7 +877,7 @@ export function PaperSection({
           {!universal.examDate && (
             <span
               title="Exam date is required — set it in Exam Context Settings before publishing"
-              className="inline-flex shrink-0 items-center gap-1 rounded border border-amber-300 dark:border-amber-900 bg-amber-50 dark:bg-[#1E1707] px-1.5 py-0.5 text-[11px] font-medium text-amber-700 dark:text-amber-400"
+              className="inline-flex shrink-0 items-center gap-1 rounded border border-warning/40 bg-warning/10 px-1.5 py-0.5 text-[11px] font-medium text-warning"
             >
               <AlertTriangle className="h-3 w-3" /> Exam date needed
             </span>
@@ -876,7 +887,7 @@ export function PaperSection({
           onClick={() => setPreviewLight((v) => !v)}
           title={previewLight ? "Previewing in light — switch to dark" : "Previewing in dark — switch to light"}
           aria-label="Toggle this subject's preview theme"
-          className="h-7 w-7 shrink-0 inline-flex items-center justify-center rounded text-gray-400 hover:text-foreground hover:bg-secondary transition-colors"
+          className="h-7 w-7 shrink-0 inline-flex items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
         >
           {previewLight ? <Sun className="h-3.5 w-3.5" /> : <Moon className="h-3.5 w-3.5" />}
         </button>
@@ -884,7 +895,7 @@ export function PaperSection({
           onClick={onRemove}
           title="Delete this subject"
           aria-label={`Delete ${subject || "this subject"}`}
-          className="h-7 w-7 shrink-0 inline-flex items-center justify-center rounded text-gray-400 hover:text-red-500 hover:bg-secondary transition-colors"
+          className="h-7 w-7 shrink-0 inline-flex items-center justify-center rounded text-muted-foreground hover:text-destructive hover:bg-secondary transition-colors"
         >
           <Trash2 className="h-3.5 w-3.5" />
         </button>
@@ -899,7 +910,7 @@ export function PaperSection({
           onClick={() => void publishPaper()}
           disabled={publishing}
           title="Publish this paper"
-          className="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-md bg-emerald-600 px-2.5 py-1 text-[12px] font-medium text-white hover:bg-emerald-700 disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
+          className="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-md bg-success px-2.5 py-1 text-[12px] font-medium text-success-foreground hover:bg-success/90 disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
         >
           {publishing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
           Publish
@@ -955,7 +966,7 @@ export function PaperSection({
                     Marks: <span className="ml-1 font-semibold tabular-nums">{totalMarks}</span>
                   </span>
                   {invalidCount > 0 && (
-                    <span className="inline-flex items-center rounded-md border border-red-200 dark:border-red-900 bg-red-50 dark:bg-[#1A0F0F] px-2.5 py-1 text-[12px] text-red-600 dark:text-red-400 shrink-0">
+                    <span className="inline-flex items-center rounded-md border border-destructive/30 bg-destructive/10 px-2.5 py-1 text-[12px] text-destructive shrink-0">
                       Flagged: <span className="ml-1 font-semibold tabular-nums">{invalidCount}</span>
                     </span>
                   )}
@@ -1026,10 +1037,10 @@ export function PaperSection({
                               : sq.type === "multi_correct" ? "C-MC"
                               : "C-INT";
                             const subColor = sq.type === "single_correct"
-                              ? "border-blue-500/40 bg-blue-500/10 text-blue-400 hover:bg-blue-500/20"
+                              ? "border-primary/40 bg-primary/10 text-primary hover:bg-primary/20"
                               : sq.type === "multi_correct"
-                              ? "border-purple-500/40 bg-purple-500/10 text-purple-400 hover:bg-purple-500/20"
-                              : "border-orange-500/40 bg-orange-500/10 text-orange-400 hover:bg-orange-500/20";
+                              ? "border-primary/60 bg-primary/25 text-primary hover:bg-primary/30"
+                              : "border-border bg-secondary text-muted-foreground hover:bg-secondary/70";
                             return (
                               <button
                                 key={`${q.id}-sq-${sq.id}`}
@@ -1038,9 +1049,9 @@ export function PaperSection({
                                 aria-label={`Open comprehension block containing Q${n}`}
                                 className={`h-9 min-w-[44px] px-1.5 rounded border text-[10px] font-medium transition-colors flex flex-col items-center justify-center leading-none gap-0.5 ${
                                   invalid
-                                    ? `bg-red-500/20 border-red-500 text-red-400 hover:bg-red-500/30 ${active ? "ring-1 ring-emerald-500" : ""}`
+                                    ? `bg-destructive/20 border-destructive text-destructive hover:bg-destructive/30 ${active ? "ring-1 ring-primary" : ""}`
                                     : active
-                                    ? `ring-1 ring-emerald-500 ${subColor}`
+                                    ? `ring-1 ring-primary ${subColor}`
                                     : subColor
                                 }`}
                               >
@@ -1058,12 +1069,12 @@ export function PaperSection({
                           : typeKey === "numerical" ? "INT"
                           : "CMP";
                         const chipColor = typeKey === "single"
-                          ? "border-blue-500/40 bg-blue-500/10 text-blue-400 hover:bg-blue-500/20"
+                          ? "border-primary/40 bg-primary/10 text-primary hover:bg-primary/20"
                           : typeKey === "multi"
-                          ? "border-purple-500/40 bg-purple-500/10 text-purple-400 hover:bg-purple-500/20"
+                          ? "border-primary/60 bg-primary/25 text-primary hover:bg-primary/30"
                           : typeKey === "numerical"
-                          ? "border-orange-500/40 bg-orange-500/10 text-orange-400 hover:bg-orange-500/20"
-                          : "border-teal-500/40 bg-teal-500/10 text-teal-400 hover:bg-teal-500/20";
+                          ? "border-border bg-secondary text-muted-foreground hover:bg-secondary/70"
+                          : "border-primary/40 bg-transparent text-primary hover:bg-primary/10";
 
                         return [(
                           <button
@@ -1073,9 +1084,9 @@ export function PaperSection({
                             aria-label={`Open question ${qNum}${invalid ? " (needs review)" : ""}`}
                             className={`h-9 min-w-[44px] px-1.5 rounded border text-[10px] font-medium transition-colors flex flex-col items-center justify-center leading-none gap-0.5 ${
                               invalid
-                                ? `bg-red-500/20 border-red-500 text-red-400 hover:bg-red-500/30 ${active ? "ring-1 ring-emerald-500" : ""}`
+                                ? `bg-destructive/20 border-destructive text-destructive hover:bg-destructive/30 ${active ? "ring-1 ring-primary" : ""}`
                                 : active
-                                ? `ring-1 ring-emerald-500 ${chipColor}`
+                                ? `ring-1 ring-primary ${chipColor}`
                                 : chipColor
                             }`}
                           >
@@ -1127,13 +1138,13 @@ export function PaperSection({
                             <div className="flex items-center gap-1">
                               <button onClick={() => i > 0 && previewQuestionAt(questions[i - 1].id)}
                                 disabled={i === 0} title="Previous question"
-                                className="h-7 w-7 inline-flex items-center justify-center rounded text-gray-400 hover:text-foreground hover:bg-secondary transition-colors disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-gray-400">
+                                className="h-7 w-7 inline-flex items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-muted-foreground">
                                 <ChevronLeft className="h-4 w-4" />
                               </button>
                               <p className="text-[13px] font-medium">Question {questionLabelAt(i, q)}</p>
                               <button onClick={() => i < questions.length - 1 && previewQuestionAt(questions[i + 1].id)}
                                 disabled={i === questions.length - 1} title="Next question"
-                                className="h-7 w-7 inline-flex items-center justify-center rounded text-gray-400 hover:text-foreground hover:bg-secondary transition-colors disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-gray-400">
+                                className="h-7 w-7 inline-flex items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-muted-foreground">
                                 <ChevronRight className="h-4 w-4" />
                               </button>
                             </div>
@@ -1143,7 +1154,7 @@ export function PaperSection({
                                 <Pencil className="h-3 w-3" /> Edit
                               </button>
                               <button onClick={() => setPreviewId(null)} title="Close preview"
-                                className="h-7 w-7 inline-flex items-center justify-center rounded text-gray-400 hover:text-foreground hover:bg-secondary transition-colors">
+                                className="h-7 w-7 inline-flex items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors">
                                 <X className="h-3.5 w-3.5" />
                               </button>
                             </div>
@@ -1161,16 +1172,16 @@ export function PaperSection({
                             if (e.key === "Enter" || e.key === " ") { e.preventDefault(); previewQuestionAt(q.id); }
                           }}
                           title="Preview this question"
-                          className={`border rounded-md bg-card transition-colors hover:bg-secondary/60 cursor-pointer ${!q.isValid ? "border-red-500" : "border-border"}`}
+                          className={`border rounded-md bg-card transition-colors hover:bg-secondary/60 cursor-pointer ${!q.isValid ? "border-destructive" : "border-border"}`}
                         >
                           <div className="flex items-center justify-between gap-3 px-4 py-2.5">
                             <div className="flex items-center gap-2 min-w-0">
-                              <span className={`shrink-0 h-6 min-w-6 px-1 rounded border flex items-center justify-center text-[11px] font-medium tabular-nums ${!q.isValid ? "border-red-600 bg-red-500 text-white" : "border-border bg-secondary"}`}>
+                              <span className={`shrink-0 h-6 min-w-6 px-1 rounded border flex items-center justify-center text-[11px] font-medium tabular-nums ${!q.isValid ? "border-destructive bg-destructive text-destructive-foreground" : "border-border bg-secondary"}`}>
                                 {questionLabelAt(i, q)}
                               </span>
                               {thumb && (
                                 <img src={thumb} alt="" aria-hidden="true"
-                                  className="shrink-0 h-8 w-8 rounded border border-border object-contain bg-card p-0.5 dark:invert dark:hue-rotate-180" />
+                                  className="shrink-0 h-8 w-8 rounded border border-border qz-figure object-contain bg-card p-0.5" />
                               )}
                               <div className="min-w-0">
                                 <p className="text-[13px] truncate">{summary}</p>
@@ -1191,7 +1202,7 @@ export function PaperSection({
                               </button>
                               <button onClick={(e) => { e.stopPropagation(); removeQuestion(q.id); }} title="Remove question"
                                 aria-label={`Remove question ${questionLabelAt(i, q)}`}
-                                className="h-7 w-7 inline-flex items-center justify-center rounded text-gray-400 hover:text-red-500 hover:bg-secondary transition-colors">
+                                className="h-7 w-7 inline-flex items-center justify-center rounded text-muted-foreground hover:text-destructive hover:bg-secondary transition-colors">
                                 <X className="h-3.5 w-3.5" />
                               </button>
                             </div>

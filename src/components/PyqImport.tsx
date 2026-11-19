@@ -100,8 +100,8 @@ function programmeToLevel(programme: Programme): string {
 }
 
 const primary =
-  "inline-flex items-center justify-center gap-1.5 rounded-md bg-emerald-600 px-3 py-1.5 text-[12px] " +
-  "font-medium text-white hover:bg-emerald-700 disabled:opacity-60 transition-colors";
+  "inline-flex items-center justify-center gap-1.5 rounded-md bg-success px-3 py-1.5 text-[12px] " +
+  "font-medium text-success-foreground hover:bg-success/90 disabled:opacity-60 transition-colors";
 const field =
   "h-8 rounded-md border border-border bg-background px-2 text-[12px] text-foreground";
 
@@ -348,7 +348,7 @@ export function PyqImport({ open, onOpenChange, onLoadIntoBuilder }: Props) {
         <DialogTitle className="text-[15px] font-semibold">Import an exam sitting</DialogTitle>
 
         {error && (
-          <div className="flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-[12px] text-amber-900 dark:border-amber-900 dark:bg-[#1E1707] dark:text-amber-300">
+          <div className="flex items-start gap-2 rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-[12px] text-warning">
             <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
             <span>{error}</span>
           </div>

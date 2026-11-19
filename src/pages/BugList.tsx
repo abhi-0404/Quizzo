@@ -132,7 +132,7 @@ export default function QuestionBank() {
                       {/* A stem that is only a figure reads as its alt text. */}
                       {row.stem.replace(/!\[([^\]]*)\]\(asset-[^)]*\)/g, "$1") || "—"}
                       {row.issues.length > 0 && (
-                        <span className="ml-2 text-[11px] text-amber-700 dark:text-amber-400">
+                        <span className="ml-2 text-[11px] text-warning">
                           needs review
                         </span>
                       )}

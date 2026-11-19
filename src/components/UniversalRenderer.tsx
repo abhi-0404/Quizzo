@@ -1,4 +1,4 @@
-import { memo, useCallback, useMemo, useState } from "react";
+import { memo, useCallback, useMemo, useState, type ComponentPropsWithoutRef, type ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
@@ -97,7 +97,7 @@ const CodeBlock = memo(function CodeBlock({ code, language }: { code: string; la
 /* ── Element overrides — flat, solid, no shadows ─────────────────────────── */
 
 const COMPONENTS = {
-  code({ className, children, ...props }: any) {
+  code({ className, children, ...props }: ComponentPropsWithoutRef<"code">) {
     const match = /language-(\w+)/.exec(className ?? "");
     const text = String(children ?? "").replace(/\n$/, "");
     // Fenced blocks carry a language class; anything else is inline code.
@@ -112,37 +112,37 @@ const COMPONENTS = {
     );
   },
   // CodeBlock renders its own <pre>; avoid the extra wrapper.
-  pre({ children }: any) {
+  pre({ children }: { children?: ReactNode }) {
     return <>{children}</>;
   },
-  table({ children }: any) {
+  table({ children }: { children?: ReactNode }) {
     return (
       <div className="ghost-scroll my-3 overflow-x-auto rounded-md border border-border">
         <table className="w-full border-collapse text-[13px]">{children}</table>
       </div>
     );
   },
-  thead({ children }: any) {
+  thead({ children }: { children?: ReactNode }) {
     return <thead className="bg-muted">{children}</thead>;
   },
-  th({ children }: any) {
+  th({ children }: { children?: ReactNode }) {
     return <th className="border-b border-border px-3 py-2 text-left font-medium">{children}</th>;
   },
-  td({ children }: any) {
+  td({ children }: { children?: ReactNode }) {
     return <td className="border-b border-border px-3 py-2">{children}</td>;
   },
-  ul({ children }: any) {
+  ul({ children }: { children?: ReactNode }) {
     return <ul className="my-2 list-disc space-y-1 pl-5">{children}</ul>;
   },
-  ol({ children }: any) {
+  ol({ children }: { children?: ReactNode }) {
     return <ol className="my-2 list-decimal space-y-1 pl-5">{children}</ol>;
   },
-  blockquote({ children }: any) {
+  blockquote({ children }: { children?: ReactNode }) {
     return (
       <blockquote className="my-3 border-l-2 border-border bg-muted px-3 py-2">{children}</blockquote>
     );
   },
-  a({ children, href }: any) {
+  a({ children, href }: { children?: ReactNode; href?: string }) {
     return (
       <a href={href} target="_blank" rel="noopener noreferrer" className="underline underline-offset-2">
         {children}
@@ -153,7 +153,7 @@ const COMPONENTS = {
     return <hr className="my-4 border-t border-border" />;
   },
   // Paragraphs stay tight so a one-line stem does not gain stray margins.
-  p({ children }: any) {
+  p({ children }: { children?: ReactNode }) {
     return <p className="my-1 first:mt-0 last:mb-0 leading-relaxed">{children}</p>;
   },
   // Without an asset list there is nothing an image reference can resolve to.
@@ -175,6 +175,44 @@ export interface UniversalRendererProps {
   assets?: QuestionAsset[];
 }
 
+/**
+ * A figure from the paper (stem, option or passage).
+ *
+ * Blending, so the image never looks like a pasted box on any theme:
+ *  - light: mix-blend-multiply, so white or near-white paper takes the page or
+ *    card colour underneath it;
+ *  - dark: inverted (hue rotated back so coloured plots keep their colours)
+ *    and mix-blend-screen, so the now-black paper disappears into the dark page.
+ * This works for transparent crops and for older opaque ones alike.
+ *
+ * Sizing, decided from the image itself once it loads: a short, wide strip is
+ * a line of maths or text and is sized like text (`data-figure="inline"`);
+ * anything taller (a graph, table, diagram) is shown as a real figure
+ * (`data-figure="block"`). Inside an answer option the two are sized very
+ * differently, see `.option-figure-scale` in index.css.
+ */
+export function classifyFigure(width: number, height: number): "inline" | "block" {
+  if (!width || !height) return "inline";
+  // Crops are rendered at 4x (and small ones upscaled 2x more), so a line of
+  // text is at most ~200px tall; anything wide and that short reads as text.
+  return width / height >= 3.2 && height <= 200 ? "inline" : "block";
+}
+
+function Figure({ src, alt }: { src: string; alt: string }) {
+  const [kind, setKind] = useState<"inline" | "block" | undefined>(undefined);
+  return (
+    <img
+      src={src}
+      alt={alt}
+      loading="lazy"
+      decoding="async"
+      data-figure={kind}
+      onLoad={(e) => setKind(classifyFigure(e.currentTarget.naturalWidth, e.currentTarget.naturalHeight))}
+      className="qz-figure my-2 max-w-[min(640px,100%)] max-h-[420px] w-auto object-contain"
+    />
+  );
+}
+
 function UniversalRendererImpl({ content, className = "", assets }: UniversalRendererProps) {
   // Trimming here keeps a trailing newline from adding an empty paragraph.
   const value = useMemo(() => (content ?? "").replace(/\s+$/, ""), [content]);
@@ -186,27 +224,9 @@ function UniversalRendererImpl({ content, className = "", assets }: UniversalRen
       img({ src, alt }: { src?: string; alt?: string }) {
         const asset = assets.find((a) => src === `asset-${a.id}`);
         if (!asset) return null;
-        return (
-          <img
-            src={asset.src}
-            alt={alt || asset.alt}
-            /* Figures are cropped with a transparent background so they sit on
-               the page colour instead of a white block. That leaves dark ink
-               invisible on the dark theme, so it is inverted there — with the
-               hue rotated back, which keeps coloured plots recognisable.
-               `max-w-full` alone only stops it overflowing the column — a
-               crop taken at a high render scale for sharpness has a large
-               *intrinsic* pixel size, so "capped at 100% of a wide column"
-               still meant filling that column edge to edge. Capped at a fixed
-               width instead (down to 100% on a narrower column, via `min()`)
-               — 640px, wide enough for a genuine multi-line stem paragraph
-               to stay readable at its own text size, not so wide it fills
-               the column edge to edge. A short inline expression inside an
-               option is capped much tighter than this by `.option-figure-scale`
-               (in index.css), since it's meant to read as a line of text. */
-            className="my-2 max-w-[min(640px,100%)] max-h-[420px] w-auto object-contain dark:invert dark:hue-rotate-180"
-          />
-        );
+        // Capped at 640px wide (100% on a narrow column): a 4x crop has a big
+        // intrinsic size and would otherwise fill the column edge to edge.
+        return <Figure src={asset.src} alt={alt || asset.alt} />;
       },
     };
   }, [assets]);

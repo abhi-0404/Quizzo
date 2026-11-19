@@ -215,7 +215,7 @@ const asPaper = (name: string, questions: Question[]): TcsIonPaper => ({
   contentPaperName: null,
   courses: [{ name, sectionId: "s1", questions, startPage: 1, questionPages: questions.map(() => 1) }],
   regions: {},
-  stats: { blocks: 0, declarations: 0, questions: questions.length, byType: {}, figures: 0, flagged: 0 },
+  stats: { blocks: 0, declarations: 0, references: 0, questions: questions.length, byType: {}, figures: 0, flagged: 0 },
 });
 
 const input = (filename: string, courseName: string, questions: Question[]): MergeInput => ({
@@ -348,7 +348,7 @@ describe("mergeSitting", () => {
         contentPaperName: null,
         courses: [{ name: "Deep Learning", sectionId: "640653106278", questions: qs, startPage: 1, questionPages: qs.map(() => 1) }],
         regions: {},
-        stats: { blocks: 0, declarations: 0, questions: qs.length, byType: {}, figures: 0, flagged: 0 },
+        stats: { blocks: 0, declarations: 0, references: 0, questions: qs.length, byType: {}, figures: 0, flagged: 0 },
       },
     };
     const orphaned: MergeInput = {
@@ -362,7 +362,7 @@ describe("mergeSitting", () => {
           questionPages: slice("et-degree-qdb1").questions.map(() => 1),
         }],
         regions: {},
-        stats: { blocks: 0, declarations: 0, questions: 1, byType: {}, figures: 0, flagged: 0 },
+        stats: { blocks: 0, declarations: 0, references: 0, questions: 1, byType: {}, figures: 0, flagged: 0 },
       },
     };
 

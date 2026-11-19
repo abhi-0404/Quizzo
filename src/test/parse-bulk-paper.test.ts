@@ -149,7 +149,7 @@ describe("serializeBlock — round-trips with the parser", () => {
 describe("parseBulkPaper — validation flags", () => {
   it("flags an MCQ with no correct option", () => {
     const { blocks } = parseBulkPaper(
-      `\\begin{question}{MCQ}\n\marks{4}\n\\stem\nPick one.\n\\options\n- a\n- b\n\\end{question}`
+      `\\begin{question}{MCQ}\n\\marks{4}\n\\stem\nPick one.\n\\options\n- a\n- b\n\\end{question}`
     );
     expect(blocks[0].isValid).toBe(false);
     expect(blocks[0].issues.join(" ")).toMatch(/no correct option/i);
@@ -165,7 +165,7 @@ describe("parseBulkPaper — validation flags", () => {
 
   it("flags an unclosed block but still returns it", () => {
     const { blocks } = parseBulkPaper(
-      `\\begin{question}{MCQ}\n\marks{4}\n\\stem\nOops.\n\\options\n+ a\n- b`
+      `\\begin{question}{MCQ}\n\\marks{4}\n\\stem\nOops.\n\\options\n+ a\n- b`
     );
     expect(blocks).toHaveLength(1);
     expect(blocks[0].isValid).toBe(false);
@@ -174,7 +174,7 @@ describe("parseBulkPaper — validation flags", () => {
 
   it("flags NUM without an answer", () => {
     const { blocks } = parseBulkPaper(
-      `\\begin{question}{NUM}\n\marks{4}\n\\stem\nCompute.\n\\end{question}`
+      `\\begin{question}{NUM}\n\\marks{4}\n\\stem\nCompute.\n\\end{question}`
     );
     expect(blocks[0].isValid).toBe(false);
     expect(blocks[0].issues.join(" ")).toMatch(/missing \\answer/i);
@@ -182,7 +182,7 @@ describe("parseBulkPaper — validation flags", () => {
 
   it("flags a single-correct with two + options", () => {
     const { blocks } = parseBulkPaper(
-      `\\begin{question}{MCQ}\n\marks{4}\n\\stem\nPick.\n\\options\n+ a\n+ b\n\\end{question}`
+      `\\begin{question}{MCQ}\n\\marks{4}\n\\stem\nPick.\n\\options\n+ a\n+ b\n\\end{question}`
     );
     expect(blocks[0].isValid).toBe(false);
     expect(blocks[0].issues.join(" ")).toMatch(/more than one/i);
@@ -190,7 +190,7 @@ describe("parseBulkPaper — validation flags", () => {
 
   it("flags an unknown type", () => {
     const { blocks } = parseBulkPaper(
-      `\\begin{question}{TRUEFALSE}\n\marks{4}\n\\stem\nX.\n\\options\n+ a\n- b\n\\end{question}`
+      `\\begin{question}{TRUEFALSE}\n\\marks{4}\n\\stem\nX.\n\\options\n+ a\n- b\n\\end{question}`
     );
     expect(blocks[0].isValid).toBe(false);
     expect(blocks[0].issues.join(" ")).toMatch(/unknown type/i);
@@ -206,7 +206,7 @@ describe("parseBulkPaper — validation flags", () => {
 
   it("prefixes sub-question issues with their index", () => {
     const { blocks } = parseBulkPaper(
-      `\\begin{comprehension}\n\\passage\nText.\n\\begin{subquestion}{MCQ}\n\marks{2}\n\\stem\nQ.\n\\options\n- a\n- b\n\\end{subquestion}\n\\end{comprehension}`
+      `\\begin{comprehension}\n\\passage\nText.\n\\begin{subquestion}{MCQ}\n\\marks{2}\n\\stem\nQ.\n\\options\n- a\n- b\n\\end{subquestion}\n\\end{comprehension}`
     );
     expect(blocks[0].isValid).toBe(false);
     expect(blocks[0].issues.join(" ")).toMatch(/Sub-question 1:/);

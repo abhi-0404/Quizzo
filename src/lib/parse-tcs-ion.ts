@@ -74,8 +74,14 @@ export interface TcsIonPaper {
   stats: {
     /** Blocks seen, including the per-section declaration items. */
     blocks: number;
-    /** Declaration items dropped (`Correct Marks : 0`). */
+    /** Zero-mark items dropped (`Correct Marks : 0`), reference items included. */
     declarations: number;
+    /**
+     * Of those, the zero-mark items that carry shared reference material ("Useful
+     * Data has been mentioned above") and were attached to the questions after
+     * them as a passage instead of being lost.
+     */
+    references: number;
     questions: number;
     byType: Record<string, number>;
     figures: number;
@@ -125,8 +131,22 @@ const RE_ANSWERS_TYPE = /^Answers Type\s*:\s*(\w+)/;
 const RE_RESPONSE_TYPE = /^Response Type\s*:\s*(\w+)/;
 const RE_QUESTION_NUMBERS = /^Question Numbers\s*:\s*\((\d+)\s*to\s*(\d+)\)/;
 const RE_BLOCK_END = /^(Sub-Section Number|Sub questions)\s*:?/;
+/**
+ * Option text of a zero-mark item that carries the section's shared data or
+ * instructions: "Useful Data has been mentioned above." / "This data attachment
+ * is just for a reference & not for an evaluation."
+ */
+const RE_REFERENCE_OPTION = /has been mentioned above|just for a reference/i;
+/**
+ * Option text of a pen-and-paper item. The question itself is answered on paper
+ * and the online "question" only records that the candidate did so, so the
+ * option marked correct is an attestation, not an answer key.
+ */
+const RE_PEN_AND_PAPER = /^I have written (?:the |my )?answers? (?:on|in) the answer ?sheets?\.?$/i;
+const PEN_AND_PAPER_ISSUE =
+  'pen-and-paper question: the source options only confirm that answers were written on the answer sheet ("I have written answers on the answer sheets" / "Not applicable"), so there is no real answer key and choosing that option would award full marks';
 /** The export's own document header — printed once, near the top of page 1. */
-const RE_PAPER_NAME = /^Question Paper Name\s*:\s*(.+)$/;
+const RE_PAPER_NAME_ROW = /^Question Paper Name\s*:\s*(.*)$/;
 
 /** Metadata rows that are never content. */
 const RE_META =
@@ -153,6 +173,50 @@ const SUB_TYPE_MAP: Record<string, SubQType> = {
  */
 const clean = (s: string) => s.replace(/[\u00a0\ufffd]/g, " ").replace(/\s+/g, " ").trim();
 
+/**
+ * How far above or below the "Question Paper Name :" row a wrapped value line
+ * may sit and still belong to it: about one line of leading.
+ */
+const VALUE_WRAP = 12;
+
+/**
+ * The value of the header's "Question Paper Name :" row.
+ *
+ * The header is a two-column table and a long value wraps inside its column,
+ * vertically centred on the label: "IIT M IMPROVEMENT AN EXAM QIV4 26 Oct" sits
+ * just above the label's baseline and "2025" just below it, both as lines of
+ * their own, leaving the label row itself with no value at all. Reading only the
+ * label row returned null for exactly the papers whose names are long, and the
+ * importer then fell back to whatever the file happened to be called. So the
+ * value is assembled from every line in the value column within one line of the
+ * label, top to bottom.
+ */
+function readPaperName(lines: PdfLine[]): string | null {
+  for (let i = 0; i < lines.length; i++) {
+    const label = lines[i];
+    const m = clean(label.text).match(RE_PAPER_NAME_ROW);
+    if (!m) continue;
+    const labelPiece = label.pieces.find((p) => /Question Paper Name/.test(p.text));
+    const valueX = labelPiece ? labelPiece.x2 : label.x;
+    const parts: { y: number; text: string }[] = [];
+    if (m[1].trim()) parts.push({ y: label.y, text: m[1].trim() });
+    for (let j = Math.max(0, i - 3); j <= Math.min(lines.length - 1, i + 3); j++) {
+      const l = lines[j];
+      if (j === i || l.page !== label.page || l.x < valueX) continue;
+      if (l.y2 < label.y - VALUE_WRAP || l.y > label.y2 + VALUE_WRAP) continue;
+      const t = clean(l.text);
+      if (t) parts.push({ y: l.y, text: t });
+    }
+    const value = parts
+      .sort((a, b) => a.y - b.y)
+      .map((p) => p.text)
+      .join(" ")
+      .trim();
+    return value || null;
+  }
+  return null;
+}
+
 /* ── Parsing ──────────────────────────────────────────────────────────────── */
 
 interface RawBlock {
@@ -174,14 +238,7 @@ interface ParsedOption {
 export function parseTcsIonPaper(extract: PdfExtract, paperName = ""): TcsIonPaper {
   const { lines, optionColour, pageWidth } = extract;
 
-  let contentPaperName: string | null = null;
-  for (const line of lines) {
-    const m = clean(line.text).match(RE_PAPER_NAME);
-    if (m) {
-      contentPaperName = m[1].trim();
-      break;
-    }
-  }
+  const contentPaperName = readPaperName(lines);
 
   /* Locate course boundaries. The course name is the last ordinary line before
      the `Section Id :` row — the exporter prints it as a bare heading. */
@@ -234,6 +291,9 @@ export function parseTcsIonPaper(extract: PdfExtract, paperName = ""): TcsIonPap
     return { id, src: "", alt };
   };
 
+  /** `![alt](asset-id)`: protocol-less, so the sanitiser leaves it alone. */
+  const ref = (a: QuestionAsset) => `![${a.alt}](asset-${a.id})`;
+
   interface Parsed {
     block: RawBlock;
     marks: number | null;
@@ -259,7 +319,14 @@ export function parseTcsIonPaper(extract: PdfExtract, paperName = ""): TcsIonPap
       range: null,
     };
 
-    const stemLines: string[] = [];
+    /**
+     * The stem in reading order: text lines and figure references interleaved
+     * exactly as the page lays them out. Figures used to be appended after all
+     * the text, which turned "<table> Based on the above data, answer..." into
+     * "Based on the above data, answer... <table>", and moved a figure that sits
+     * between two stem lines below the second one.
+     */
+    const stemParts: { kind: "text" | "figure"; value: string }[] = [];
     let mode: "head" | "stem" | "options" | "answers" | "tail" = "head";
     let cur: ParsedOption | null = null;
     let prev: PdfLine | null = null;
@@ -276,9 +343,9 @@ export function parseTcsIonPaper(extract: PdfExtract, paperName = ""): TcsIonPap
       if (!from) return;
       const wide = (page: number, y: number, y2: number) => {
         if (y2 - y <= FIGURE_GAP) return;
-        out.stemAssets.push(
-          addAsset({ page, x: PAGE_MARGIN, y, x2: pageWidth[page] - PAGE_MARGIN, y2 }, alt)
-        );
+        const asset = addAsset({ page, x: PAGE_MARGIN, y, x2: pageWidth[page] - PAGE_MARGIN, y2 }, alt);
+        out.stemAssets.push(asset);
+        stemParts.push({ kind: "figure", value: ref(asset) });
       };
       if (from.page === to.page) {
         wide(from.page, from.y2 + DESCENDER_PAD, to.y);
@@ -336,7 +403,7 @@ export function parseTcsIonPaper(extract: PdfExtract, paperName = ""): TcsIonPap
       if ((m = t.match(RE_LABEL))) {
         mode = "stem";
         if (m[1].trim() && !/^(Multiple Choice|Multiple Select|Short Answer|Comprehension)/.test(m[1].trim())) {
-          stemLines.push(m[1].trim());
+          stemParts.push({ kind: "text", value: m[1].trim() });
         }
         prev = line;
         continue;
@@ -367,7 +434,7 @@ export function parseTcsIonPaper(extract: PdfExtract, paperName = ""): TcsIonPap
 
       if (mode === "stem") {
         captureFigure(prev, line, "Question figure");
-        stemLines.push(line.text.trim());
+        stemParts.push({ kind: "text", value: line.text.trim() });
       } else if (mode === "options") {
         const idPiece = line.pieces[0];
         const isOptionRow = idPiece && RE_OPTION_ID.test(idPiece.text.trim());
@@ -410,7 +477,16 @@ export function parseTcsIonPaper(extract: PdfExtract, paperName = ""): TcsIonPap
       prev = line;
     }
 
-    out.stem = stemLines.join("\n").trim();
+    /* Consecutive text lines stay one paragraph; every figure is a paragraph of
+       its own. Text followed by figures comes out exactly as it always did. */
+    let stem = "";
+    let prevKind: "text" | "figure" | null = null;
+    for (const part of stemParts) {
+      if (prevKind) stem += part.kind === "text" && prevKind === "text" ? "\n" : "\n\n";
+      stem += part.value;
+      prevKind = part.kind;
+    }
+    out.stem = stem.trim();
     return out;
   };
 
@@ -422,6 +498,7 @@ export function parseTcsIonPaper(extract: PdfExtract, paperName = ""): TcsIonPap
   const stats: TcsIonPaper["stats"] = {
     blocks: parsed.length,
     declarations: 0,
+    references: 0,
     questions: 0,
     byType: {},
     figures: 0,
@@ -482,12 +559,6 @@ export function parseTcsIonPaper(extract: PdfExtract, paperName = ""): TcsIonPap
     return { course: c, orphan: info === null };
   };
 
-  /** `![alt](asset-id)` — protocol-less, so the sanitiser leaves it alone. */
-  const ref = (a: QuestionAsset) => `![${a.alt}](asset-${a.id})`;
-
-  const withFigures = (text: string, assets: QuestionAsset[]) =>
-    [text, ...assets.map(ref)].filter(Boolean).join("\n\n");
-
   /** Options carry their figure inline; the reference lives in the option text. */
   const optionText = (o: ParsedOption, bag: QuestionAsset[]) => {
     if (o.text) return o.text;
@@ -527,7 +598,7 @@ export function parseTcsIonPaper(extract: PdfExtract, paperName = ""): TcsIonPap
     sub.type = type;
     sub.marks = p.marks ?? DEFAULT_MARKS;
     sub.assets = [...p.stemAssets];
-    sub.stem = withFigures(p.stem, p.stemAssets);
+    sub.stem = p.stem;
     if (type === "numerical") {
       sub.numericalAnswer = answerOf(p, own);
       sub.options = ["", "", "", ""];
@@ -545,8 +616,27 @@ export function parseTcsIonPaper(extract: PdfExtract, paperName = ""): TcsIonPap
       }
     }
     if (!sub.stem) own.push("no question text or figure found");
+    if (p.options.some((o) => RE_PEN_AND_PAPER.test(clean(o.text)))) own.push(PEN_AND_PAPER_ISSUE);
     parentIssues.push(...own.map((i) => label + i));
     return sub;
+  };
+
+  /**
+   * Shared reference material per course, keyed like `byCourse`, in the order
+   * it appeared. Every question after it in the same course carries it.
+   */
+  const referencesByCourse = new Map<string, { text: string; assets: QuestionAsset[] }[]>();
+  const courseKeyOf = (p: Parsed) => {
+    const info = courseFor(p.block.start);
+    return info ? info.id || info.name : UNATTRIBUTED;
+  };
+
+  /** Prepend the course's reference material to a passage. */
+  const withReferences = (q: Question, key: string) => {
+    const refs = referencesByCourse.get(key);
+    if (!refs?.length) return;
+    q.passage = [...refs.map((r) => r.text), q.passage].filter(Boolean).join("\n\n");
+    q.assets = [...refs.flatMap((r) => r.assets), ...q.assets];
   };
 
   for (const p of parsed) {
@@ -555,6 +645,18 @@ export function parseTcsIonPaper(extract: PdfExtract, paperName = ""): TcsIonPap
     // marks ("THIS IS QUESTION…", options YES/NO). Not content.
     if (p.marks === 0) {
       stats.declarations++;
+      /* Some zero-mark items are not a declaration but the section's shared
+         data: a dataset table, a list of instructions or a note ("assume
+         necessary imports") that the questions after it depend on. Dropping it
+         left questions such as "executed using the Library dataset" with no
+         dataset at all, so it rides along as their passage instead. */
+      if (p.stem && p.options.some((o) => RE_REFERENCE_OPTION.test(clean(o.text)))) {
+        stats.references++;
+        const key = courseKeyOf(p);
+        const list = referencesByCourse.get(key) ?? [];
+        list.push({ text: p.stem, assets: [...p.stemAssets] });
+        referencesByCourse.set(key, list);
+      }
       continue;
     }
 
@@ -564,6 +666,9 @@ export function parseTcsIonPaper(extract: PdfExtract, paperName = ""): TcsIonPap
       issues.push(
         "no section header precedes this question, so it belongs to a section absent from this PDF — check it is not the previous subject's tail before publishing"
       );
+    }
+    if (p.options.some((o) => RE_PEN_AND_PAPER.test(clean(o.text)))) {
+      issues.push(PEN_AND_PAPER_ISSUE);
     }
     // Keyed by the source Question Id so a flagged block can be traced straight
     // back to the paper it came from.
@@ -579,7 +684,7 @@ export function parseTcsIonPaper(extract: PdfExtract, paperName = ""): TcsIonPap
     if (p.block.type === "COMPREHENSION") {
       q.type = "comprehension";
       q.assets = [...p.stemAssets];
-      q.passage = withFigures(p.stem, p.stemAssets);
+      q.passage = p.stem;
       const kids = childrenOf(p);
       q.subQuestions = kids.map((c, i) => buildSub(c, i, issues));
       // The parent has no marks of its own; its children carry them.
@@ -593,7 +698,7 @@ export function parseTcsIonPaper(extract: PdfExtract, paperName = ""): TcsIonPap
       q.type = TYPE_MAP[p.block.type] ?? "single";
       const bag: QuestionAsset[] = [];
       q.assets = [...p.stemAssets];
-      q.stem = withFigures(p.stem, p.stemAssets);
+      q.stem = p.stem;
 
       if (q.type === "numerical") {
         q.numericalAnswer = answerOf(p, issues);
@@ -611,6 +716,7 @@ export function parseTcsIonPaper(extract: PdfExtract, paperName = ""): TcsIonPap
       }
       if (!q.stem) issues.push("no question text or figure found");
     }
+    withReferences(q, courseKeyOf(p));
 
     q.isValid = issues.length === 0;
     stats.questions++;

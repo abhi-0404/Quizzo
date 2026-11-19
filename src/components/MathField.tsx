@@ -195,7 +195,7 @@ export function MathField({
       onKeyDown={handleKeyDown}
       onPaste={handlePaste}
       onBlur={handleBlur}
-      className={`math-field ${isEmpty ? "is-empty" : ""} w-full rounded-md border border-border bg-card px-3 py-2 text-[13px] text-foreground focus:outline-none focus:border-gray-400 dark:focus:border-gray-600 transition-colors ${className}`}
+      className={`math-field ${isEmpty ? "is-empty" : ""} w-full rounded-md border border-border bg-card px-3 py-2 text-[13px] text-foreground focus:outline-none focus:border-ring transition-colors ${className}`}
     />
   );
 }

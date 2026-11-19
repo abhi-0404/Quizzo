@@ -155,8 +155,49 @@ function collectOptionColours(
   flush();
 }
 
-/** Group text items into visual lines, top-to-bottom then left-to-right. */
-function itemsToLines(
+/**
+ * A smaller glyph run whose baseline sits this far above or below the line's
+ * body text is a superscript or subscript. The real export raises a 10pt
+ * exponent ~4 units on 12pt text and drops a subscript ~2.4 units, while
+ * same-baseline runs differ by well under 0.1.
+ */
+const SCRIPT_SHIFT = 1;
+
+const SUPERSCRIPT: Record<string, string> = {
+  "0": "⁰", "1": "¹", "2": "²", "3": "³", "4": "⁴",
+  "5": "⁵", "6": "⁶", "7": "⁷", "8": "⁸", "9": "⁹",
+  "+": "⁺", "-": "⁻", "−": "⁻", "=": "⁼", "(": "⁽", ")": "⁾",
+};
+const SUBSCRIPT: Record<string, string> = {
+  "0": "₀", "1": "₁", "2": "₂", "3": "₃", "4": "₄",
+  "5": "₅", "6": "₆", "7": "₇", "8": "₈", "9": "₉",
+  "+": "₊", "-": "₋", "−": "₋", "=": "₌", "(": "₍", ")": "₎",
+};
+
+/**
+ * Write a raised or lowered run so it still reads as one.
+ *
+ * Joined as plain text, `A` + raised `2` became `A2` and `n` + lowered `1`
+ * became `n1`: "A2 = 0" is a different statement from "A² = 0", and it sat in
+ * an answer key. Digits and signs have Unicode script forms; anything else
+ * falls back to the `^`/`_` convention, bracketed when longer than one glyph.
+ */
+export function scriptText(text: string, kind: "sup" | "sub"): string {
+  const map = kind === "sup" ? SUPERSCRIPT : SUBSCRIPT;
+  const body = text.trim();
+  if (!body) return text;
+  // Primes and stars already read as raised marks; leave them alone.
+  if (/^[*'′″]+$/.test(body)) return body;
+  if ([...body].every((c) => map[c])) return [...body].map((c) => map[c]).join("");
+  const mark = kind === "sup" ? "^" : "_";
+  return [...body].length === 1 ? `${mark}${body}` : `${mark}(${body})`;
+}
+
+/**
+ * Group text items into visual lines, top-to-bottom then left-to-right.
+ * Exported for unit tests; `extractPdf` is the only production caller.
+ */
+export function itemsToLines(
   items: { str: string; transform: number[]; width: number; height: number }[],
   viewportTransform: number[],
   applyTransform: (a: number[], b: number[]) => number[],
@@ -176,12 +217,48 @@ function itemsToLines(
 
   pieces.sort((a, b) => a.bottom - b.bottom || a.x - b.x);
 
+  /**
+   * Rewrite super- and subscript runs in a line (already sorted by x) in place.
+   *
+   * The line's body is its tallest visible run; a strictly smaller run whose
+   * baseline is shifted off the body's is a script. Consecutive script pieces of
+   * one kind are rewritten as one run, kept on the first piece so the piece
+   * count (and the option id in piece 0) never changes.
+   */
+  function markScripts(row: Piece[]) {
+    const visible = row.filter((p) => p.text.trim());
+    if (visible.length < 2) return;
+    const body = visible.reduce((a, b) => (b.bottom - b.top > a.bottom - a.top ? b : a));
+    const bodyH = body.bottom - body.top;
+    const kindOf = (p: Piece): "sup" | "sub" | null => {
+      if (!p.text.trim() || p.bottom - p.top >= bodyH - 0.5) return null;
+      const shift = body.bottom - p.bottom;
+      if (shift > SCRIPT_SHIFT) return "sup";
+      if (shift < -SCRIPT_SHIFT) return "sub";
+      return null;
+    };
+    for (let i = 0; i < row.length; ) {
+      const kind = kindOf(row[i]);
+      if (!kind) {
+        i++;
+        continue;
+      }
+      let j = i + 1;
+      while (j < row.length && kindOf(row[j]) === kind) j++;
+      const run = row.slice(i, j).map((p) => p.text).join("");
+      row[i].text = scriptText(run, kind);
+      for (let k = i + 1; k < j; k++) row[k].text = "";
+      i = j;
+    }
+  }
+
   const lines: PdfLine[] = [];
   let group: Piece[] = [];
 
   const emit = () => {
     if (!group.length) return;
     group.sort((a, b) => a.x - b.x);
+    markScripts(group);
     lines.push({
       page,
       x: Math.min(...group.map((p) => p.x)),
@@ -311,6 +388,60 @@ function sharpenInk(src: Uint8ClampedArray, w: number, h: number): Uint8ClampedA
   return out;
 }
 
+/**
+ * Figure enhancer. Small crops (typically a bitmap equation the paper's author
+ * pasted in at low resolution) look pixelated once the browser stretches them,
+ * in the light theme and worse in the dark one, where the CSS invert turns the
+ * soft alpha fringe into a visible halo. Two steps fix both:
+ *
+ *  1. Crops under 900px on the long side are upscaled 2x with the browser's
+ *     high-quality resampler, so the browser never has to stretch them itself.
+ *  2. The alpha channel is pushed through a smoothstep curve. Faint fringe
+ *     pixels vanish and mid-strength ones become solid, giving a crisp edge
+ *     that stays clean on both a white and an inverted (dark) page. The RGB
+ *     already holds the un-mixed ink colour, so it is left alone.
+ *
+ * Runs only on the figure being published, in the admin's browser; nothing is
+ * written anywhere by this function.
+ */
+function enhanceFigure(src: OffscreenCanvas): OffscreenCanvas {
+  const longSide = Math.max(src.width, src.height);
+  const factor = longSide < 900 ? 2 : 1;
+  let work = src;
+  if (factor > 1) {
+    work = new OffscreenCanvas(src.width * factor, src.height * factor);
+    const wctx = work.getContext("2d") as OffscreenCanvasRenderingContext2D;
+    wctx.imageSmoothingEnabled = true;
+    wctx.imageSmoothingQuality = "high";
+    wctx.drawImage(src, 0, 0, work.width, work.height);
+  }
+  const ctx = work.getContext("2d", { willReadFrequently: true }) as OffscreenCanvasRenderingContext2D;
+  const img = ctx.getImageData(0, 0, work.width, work.height);
+  const d = img.data;
+  const LO = 0.12;
+  const HI = 0.88;
+  for (let i = 3; i < d.length; i += 4) {
+    const t = Math.min(1, Math.max(0, (d[i] / 255 - LO) / (HI - LO)));
+    d[i] = Math.round(255 * t * t * (3 - 2 * t));
+  }
+  ctx.putImageData(img, 0, 0);
+  return work;
+}
+
+/**
+ * Luminance at or above which a pixel counts as paper. Set below pure white so
+ * the light-grey fills PDFs put behind code blocks and tables (and their faint
+ * borders) also drop out: a figure should read like text on the page, not like
+ * a pasted box. Darker greys and all ink are kept.
+ */
+export const PAPER_LUM = 226;
+
+/** Opacity of a pixel with luminance `lum` (0-255) once paper is keyed out. */
+export function paperAlpha(lum: number): number {
+  if (lum >= PAPER_LUM) return 0;
+  return Math.min(1, (PAPER_LUM - lum) / (PAPER_LUM - 24));
+}
+
 export class PageRenderer {
   private cache = new Map<number, OffscreenCanvas>();
   private doc: Promise<{ getPage(n: number): Promise<unknown>; destroy(): Promise<void> }>;
@@ -428,9 +559,9 @@ export class PageRenderer {
          * it sits on a transparent background. Un-premultiplying against white
          * recovers the ink's own colour — glyph edges stay crisp and coloured
          * plots keep their hue. */
-        const a = Math.min(1, Math.max(0, 1 - (0.299 * r + 0.587 * g + 0.114 * b) / 255));
+        const a = paperAlpha(0.299 * r + 0.587 * g + 0.114 * b);
         const unmix = (c: number) =>
-          a === 0 ? 0 : Math.round(Math.min(255, Math.max(0, (c - 255 * (1 - a)) / a)));
+          a === 0 ? 0 : Math.round(Math.min(255, Math.max(0, (c - PAPER_LUM * (1 - a)) / a)));
 
         cropped.data[di] = unmix(r);
         cropped.data[di + 1] = unmix(g);
@@ -439,13 +570,14 @@ export class PageRenderer {
       }
     }
     octx.putImageData(cropped, 0, 0);
+    const finalCanvas = enhanceFigure(out);
     // WebP keeps the alpha channel this whole pipeline depends on, at a
     // fraction of PNG's bytes for the same crop — the higher render scale
     // above is what pays for the extra sharpness; this is what keeps the
     // result from costing proportionally more to download for it. Any
     // engine that doesn't support WebP encoding falls back to PNG per spec,
     // so this never produces an unreadable file, only a larger one.
-    const blob = await out.convertToBlob({ type: "image/webp", quality: 0.92 });
+    const blob = await finalCanvas.convertToBlob({ type: "image/webp", quality: 0.95 });
     return blobToDataUrl(blob);
   }
 

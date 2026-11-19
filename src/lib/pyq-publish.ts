@@ -416,7 +416,22 @@ export interface PublishAuthoredParams {
  * same questions for the same sitting updates that row instead of duplicating
  * it, same as the PDF pipeline.
  */
-export async function publishAuthoredPaper(params: PublishAuthoredParams): Promise<string> {
+/**
+ * Publishes run one at a time. Each publish writes a paper, every question
+ * and uploads its figures; an admin clicking Publish on several subjects in
+ * quick succession used to start them all at once and exhaust the database
+ * connections ("The connection to the database timed out"). Queued, every
+ * click still completes, in order.
+ */
+let publishQueue: Promise<unknown> = Promise.resolve();
+
+export function publishAuthoredPaper(params: PublishAuthoredParams): Promise<string> {
+  const run = publishQueue.then(() => publishAuthoredPaperNow(params));
+  publishQueue = run.catch(() => undefined);
+  return run;
+}
+
+async function publishAuthoredPaperNow(params: PublishAuthoredParams): Promise<string> {
   const { subject, level, examDate, examType, term, examCode = "", slot = "fn", questions } = params;
 
   const courseId = await resolveCourseBySubject(subject, level);

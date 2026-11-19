@@ -151,7 +151,7 @@ export default function DevPyqLab() {
               figures {stats.figuresCropped}/{stats.figuresDetected} cropped
             </span>
             <span>{stats.ms} ms</span>
-            <span className={stats.flagged ? "text-amber-600 dark:text-amber-400" : undefined}>
+            <span className={stats.flagged ? "text-warning" : undefined}>
               {stats.flagged} flagged
             </span>
             <span>
@@ -163,7 +163,7 @@ export default function DevPyqLab() {
       </header>
 
       {error && (
-        <div className="m-4 flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-[12px] text-amber-900 dark:border-amber-900 dark:bg-[#1E1707] dark:text-amber-300">
+        <div className="m-4 flex items-start gap-2 rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-[12px] text-warning">
           <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
           <pre className="ghost-scroll overflow-x-auto whitespace-pre-wrap font-mono text-[11px]">
             {error}

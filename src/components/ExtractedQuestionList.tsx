@@ -34,8 +34,8 @@ export interface ExtractedQuestionListProps {
 }
 
 const CORRECT_ROW =
-  "border-emerald-500 bg-emerald-50 text-emerald-900 dark:bg-[#0F1A14] dark:text-emerald-300";
-const CORRECT_MARK = "border-emerald-500 bg-emerald-500 text-white";
+  "border-success bg-success/10 text-success";
+const CORRECT_MARK = "border-success bg-success text-success-foreground";
 
 const subTypeLabel = (t: SubQType) => SUB_TYPES.find((x) => x.key === t)?.label ?? t;
 
@@ -102,7 +102,7 @@ function OptionRow({
       {/* Colour alone must not carry the key — screen readers and printouts. */}
       <span
         className={`inline-flex shrink-0 items-center gap-1 text-[11px] font-medium ${
-          correct ? "text-emerald-700 dark:text-emerald-300" : "sr-only"
+          correct ? "text-success" : "sr-only"
         }`}
       >
         {correct && <Check className="h-3 w-3" aria-hidden="true" />}
@@ -167,7 +167,7 @@ function Issues({ issues }: { issues: string[] }) {
       {issues.map((issue, i) => (
         <li
           key={i}
-          className="flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50 px-2.5 py-1.5 text-[11px] text-amber-900 dark:border-amber-900 dark:bg-[#1E1707] dark:text-amber-300"
+          className="flex items-start gap-2 rounded-md border border-warning/40 bg-warning/10 px-2.5 py-1.5 text-[11px] text-warning"
         >
           <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" aria-hidden="true" />
           <span>{issue}</span>
@@ -239,7 +239,7 @@ function QuestionBlock({
       </span>
       <span className="text-[11px] text-muted-foreground tabular-nums">{marksLabel(marks)}</span>
       {!q.isValid && (
-        <span className="inline-flex items-center gap-1 text-[11px] font-medium text-amber-700 dark:text-amber-400">
+        <span className="inline-flex items-center gap-1 text-[11px] font-medium text-warning">
           <AlertTriangle className="h-3 w-3" aria-hidden="true" />
           {q.issues.length} issue{q.issues.length === 1 ? "" : "s"}
         </span>
@@ -423,7 +423,7 @@ export function ExtractedQuestionList({
                   {t.count} Q · {t.marks} marks
                 </span>
                 {t.flagged > 0 && (
-                  <span className="inline-flex shrink-0 items-center gap-1 text-[11px] font-medium text-amber-700 dark:text-amber-400 tabular-nums">
+                  <span className="inline-flex shrink-0 items-center gap-1 text-[11px] font-medium text-warning tabular-nums">
                     <AlertTriangle className="h-3 w-3" aria-hidden="true" />
                     {t.flagged} flagged
                   </span>

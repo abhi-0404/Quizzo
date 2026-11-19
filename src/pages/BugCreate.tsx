@@ -183,10 +183,17 @@ export default function CreateContent() {
 
                   {/* ── Group: Exam Context Settings ──────────────────── */}
                   <div className="border-b border-border">
-                    <button
+                    <div
+                      role="button"
+                      tabIndex={0}
                       onClick={() => toggleGroupContext(group.id)}
+                      onKeyDown={(e) => {
+                        if (e.target !== e.currentTarget) return;
+                        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleGroupContext(group.id); }
+                      }}
                       aria-expanded={group.contextOpen}
-                      className="w-full flex items-center justify-between gap-2 px-4 py-2.5 text-left hover:bg-secondary transition-colors rounded-t-md"
+                      aria-label="Exam Context Settings"
+                      className="w-full flex cursor-pointer items-center justify-between gap-2 px-4 py-2.5 text-left hover:bg-secondary transition-colors rounded-t-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     >
                       <span className="flex items-center gap-2 min-w-0">
                         <span className="text-[13px] font-medium shrink-0">Exam Context Settings</span>
@@ -198,7 +205,7 @@ export default function CreateContent() {
                         {!u.examDate && (
                           <span
                             title="Exam date is required before any paper here can be published"
-                            className="inline-flex items-center gap-1 rounded border border-amber-300 dark:border-amber-900 bg-amber-50 dark:bg-[#1E1707] px-1.5 py-0.5 text-[11px] font-medium text-amber-700 dark:text-amber-400 shrink-0"
+                            className="inline-flex items-center gap-1 rounded border border-warning/40 bg-warning/10 px-1.5 py-0.5 text-[11px] font-medium text-warning shrink-0"
                           >
                             <AlertTriangle className="h-3 w-3" /> Exam date needed
                           </span>
@@ -206,7 +213,9 @@ export default function CreateContent() {
                       </span>
                       <span className="flex items-center gap-2 shrink-0">
                         <button
+                          type="button"
                           onClick={(e) => { e.stopPropagation(); removeGroup(group.id); }}
+                          aria-label="Remove this entire import"
                           title="Remove this entire import"
                           className="h-6 w-6 flex items-center justify-center rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
                         >
@@ -216,7 +225,7 @@ export default function CreateContent() {
                           ? <ChevronDown className="h-4 w-4 text-muted-foreground" />
                           : <ChevronRight className="h-4 w-4 text-muted-foreground" />}
                       </span>
-                    </button>
+                    </div>
 
                     {group.contextOpen && (
                       <div className="px-4 pb-4 pt-3">
