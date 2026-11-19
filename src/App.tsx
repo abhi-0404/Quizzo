@@ -28,6 +28,12 @@ const ExamReport = lazy(() => import("./pages/ExamReport"));
 const DevPyqLab = lazy(() => import("./pages/DevPyqLab"));
 const DevPyqImportLab = lazy(() => import("./pages/DevPyqImportLab"));
 const AuthCallback = lazy(() => import("./pages/AuthCallback"));
+const Contributors = lazy(() => import("./pages/Contributors"));
+const ReviewInbox = lazy(() => import("./pages/ReviewInbox"));
+const ContributorOverview = lazy(() => import("./pages/contributor/Overview"));
+const ContributorPapers = lazy(() => import("./pages/contributor/Papers"));
+const ContributorReviewPaper = lazy(() => import("./pages/contributor/ReviewPaper"));
+const ContributorSubmissions = lazy(() => import("./pages/contributor/Submissions"));
 
 
 const queryClient = new QueryClient({
@@ -60,6 +66,14 @@ const App = () => {
               <Route path="/admin/bank" element={<ProtectedRoute requireAdmin><QuestionBank /></ProtectedRoute>} />
               <Route path="/admin/schedule" element={<ProtectedRoute requireAdmin><Schedule /></ProtectedRoute>} />
               <Route path="/admin/performance" element={<ProtectedRoute requireAdmin><Performance /></ProtectedRoute>} />
+              <Route path="/admin/contributors" element={<ProtectedRoute requireAdmin><Contributors /></ProtectedRoute>} />
+              <Route path="/admin/reviews" element={<ProtectedRoute requireAdmin><ReviewInbox /></ProtectedRoute>} />
+
+              {/* Contributor portal: reviewers check answer keys and submit solutions. */}
+              <Route path="/contributor/overview" element={<ProtectedRoute requireReviewer><ContributorOverview /></ProtectedRoute>} />
+              <Route path="/contributor/papers" element={<ProtectedRoute requireReviewer><ContributorPapers /></ProtectedRoute>} />
+              <Route path="/contributor/papers/:paperId" element={<ProtectedRoute requireReviewer><ContributorReviewPaper /></ProtectedRoute>} />
+              <Route path="/contributor/submissions" element={<ProtectedRoute requireReviewer><ContributorSubmissions /></ProtectedRoute>} />
 
               <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
               <Route path="/profile" element={<Profile />} />
