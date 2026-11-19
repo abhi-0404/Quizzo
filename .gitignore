@@ -66,3 +66,11 @@ samples/
 
 # Local PYQ samples used by the dev extraction lab — never commit exam PDFs
 public/samples/
+
+# End-to-end test output and saved sign-in states (local test accounts only)
+e2e/.auth/
+e2e/.results/
+dist-e2e/
+
+# Real exam papers used by the local parser audit test: never commit
+PYQ pdf/

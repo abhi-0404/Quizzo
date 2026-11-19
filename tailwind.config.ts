@@ -1,4 +1,5 @@
 import type { Config } from "tailwindcss";
+import tailwindcssAnimate from "tailwindcss-animate";
 
 export default {
   darkMode: ["class"],
@@ -38,6 +39,14 @@ export default {
         warning: {
           DEFAULT: "hsl(var(--warning))",
           foreground: "hsl(var(--warning-foreground))",
+        },
+        review: {
+          DEFAULT: "hsl(var(--review))",
+          foreground: "hsl(var(--review-foreground))",
+        },
+        submit: {
+          DEFAULT: "hsl(var(--submit))",
+          foreground: "hsl(var(--submit-foreground))",
         },
         info: {
           DEFAULT: "hsl(var(--info))",
@@ -103,5 +112,5 @@ export default {
       },
     },
   },
-  plugins: [require("tailwindcss-animate")],
+  plugins: [tailwindcssAnimate],
 } satisfies Config;
