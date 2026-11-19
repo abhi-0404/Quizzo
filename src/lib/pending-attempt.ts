@@ -1,17 +1,14 @@
 /**
- * Holds one graded-but-unsaved exam attempt across the redirect to /auth.
+ * Holds one finished-but-unsubmitted exam attempt across the redirect to /auth.
  *
- * A signed-out student can sit and finish a paper; grading happens client-side
- * regardless of auth state. Only the persistence step (`attempts` insert)
- * requires a user id, so the graded result is held here until one exists,
+ * A signed-out student can sit and finish a paper, but grading happens in the
+ * database and needs a user. The raw responses are held here until one exists,
  * rather than being thrown away the moment "Submit" is pressed.
  */
 
 export interface PendingAttemptAnswer {
-  questionId?: string;
+  questionId: string;
   response: unknown;
-  status: "correct" | "incorrect" | "skipped";
-  marks: number;
   timeSeconds: number;
 }
 
@@ -19,7 +16,6 @@ export interface PendingAttempt {
   paperId: string;
   mode: "exam" | "practice";
   durationSeconds: number;
-  totalMarks: number;
   answers: PendingAttemptAnswer[];
   slug: string;
   courseSlug: string;
@@ -39,7 +35,18 @@ export function savePendingAttempt(attempt: PendingAttempt) {
 export function loadPendingAttempt(): PendingAttempt | null {
   try {
     const raw = localStorage.getItem(KEY);
-    return raw ? (JSON.parse(raw) as PendingAttempt) : null;
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as PendingAttempt;
+    // Untrusted storage that is replayed into an RPC: check the shape.
+    if (
+      typeof parsed?.paperId !== "string" ||
+      !Array.isArray(parsed.answers) ||
+      typeof parsed.slug !== "string" ||
+      typeof parsed.courseSlug !== "string"
+    ) {
+      return null;
+    }
+    return parsed;
   } catch {
     return null;
   }

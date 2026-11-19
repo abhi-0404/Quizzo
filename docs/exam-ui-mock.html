@@ -1,0 +1,232 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>QUIZZO exam screen: design mock</title>
+<!--
+  Visual reference for docs/EXAM_UI_GUIDE.md. Open it in a browser.
+  The colours are your real tokens from src/index.css, so light and dark match the app.
+  The question text and numbers are illustrative only: this file is not part of the app.
+-->
+<style>
+  :root {
+    --background: 220 9% 95%; --foreground: 221 39% 11%;
+    --card: 0 0% 100%; --muted: 220 14% 96%; --muted-foreground: 220 9% 46%;
+    --border: 220 13% 91%; --input: 216 12% 84%;
+    --primary: 234 55% 58%; --primary-foreground: 0 0% 100%;
+    --success: 142 70% 40%; --destructive: 345 72% 51%; --warning: 38 92% 50%;
+    --radius: 6px;
+  }
+  :root.dark {
+    --background: 240 6% 6%; --foreground: 0 0% 90%;
+    --card: 240 5% 9%; --muted: 240 4% 14%; --muted-foreground: 0 0% 50%;
+    --border: 240 4% 26%; --input: 240 4% 26%;
+    --primary: 234 55% 60%; --success: 145 100% 50%; --destructive: 345 90% 60%; --warning: 38 100% 55%;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: hsl(var(--background)); color: hsl(var(--foreground));
+    font-family: Geist, Inter, system-ui, -apple-system, "Segoe UI", sans-serif; font-size: 14px;
+  }
+  button { font: inherit; color: inherit; cursor: pointer; }
+  .app { height: 100vh; display: flex; flex-direction: column; }
+
+  /* Header */
+  header { height: 56px; flex: none; display: flex; align-items: center; gap: 12px; padding: 0 16px;
+    background: hsl(var(--card)); border-bottom: 1px solid hsl(var(--border)); }
+  .title { min-width: 0; }
+  .title b { display: block; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .title span { font-size: 11px; color: hsl(var(--muted-foreground)); }
+  .spacer { flex: 1; }
+  .timer { display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px; border-radius: var(--radius);
+    border: 1px solid hsl(var(--border)); font: 600 17px ui-monospace, "SF Mono", Menlo, monospace; font-variant-numeric: tabular-nums; }
+  .timer.t15 { color: hsl(var(--warning)); border-color: hsl(var(--warning)); }
+  .timer.t5  { color: hsl(var(--destructive)); border-color: hsl(var(--destructive)); }
+  .timer small { font: 500 10px Geist, Inter, system-ui, sans-serif; letter-spacing: .08em; text-transform: uppercase; color: hsl(var(--muted-foreground)); }
+  .iconbtn { width: 34px; height: 34px; border: 0; border-radius: var(--radius); background: transparent; color: hsl(var(--muted-foreground)); }
+  .iconbtn:hover { background: hsl(var(--muted)); color: hsl(var(--foreground)); }
+  .btn { height: 34px; padding: 0 14px; border-radius: var(--radius); border: 1px solid hsl(var(--border)); background: hsl(var(--card)); font-weight: 500; }
+  .btn.primary { background: hsl(var(--primary)); border-color: hsl(var(--primary)); color: hsl(var(--primary-foreground)); }
+  .btn.danger  { background: hsl(var(--destructive)); border-color: hsl(var(--destructive)); color: #fff; }
+  .progress { height: 3px; background: hsl(var(--border)); flex: none; }
+  .progress i { display: block; height: 100%; width: 40%; background: hsl(var(--success)); }
+
+  /* Body */
+  .body { flex: 1; min-height: 0; display: grid; grid-template-columns: 1fr 320px; }
+  main { min-width: 0; display: flex; flex-direction: column; }
+  .scroll { flex: 1; overflow: auto; padding: 24px; }
+  .q { max-width: 760px; margin: 0 auto; }
+  .qhead { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 16px; }
+  .qhead h2 { margin: 0; font-size: 15px; }
+  .chip { padding: 2px 8px; border-radius: 999px; font-size: 11px; background: hsl(var(--muted)); border: 1px solid hsl(var(--border)); }
+  .chip.marks { color: hsl(var(--success)); }
+  .flagbtn { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 10px; border-radius: var(--radius);
+    border: 1px solid hsl(var(--border)); background: hsl(var(--card)); font-size: 12px; }
+  .flagbtn[aria-pressed="true"] { border-color: hsl(var(--primary)); color: hsl(var(--primary)); }
+  .stem { font-size: 17px; line-height: 1.6; margin: 0 0 20px; }
+  .hint { font-size: 12px; color: hsl(var(--muted-foreground)); margin: -8px 0 12px; }
+  .opts { display: grid; gap: 8px; }
+  .opt { display: flex; align-items: center; gap: 12px; min-height: 48px; padding: 10px 14px; text-align: left; width: 100%;
+    background: hsl(var(--card)); border: 1px solid hsl(var(--border)); border-radius: var(--radius); }
+  .opt:hover { border-color: hsl(var(--input)); background: hsl(var(--muted)); }
+  .opt[aria-checked="true"] { border-color: hsl(var(--primary)); background: hsl(var(--muted)); box-shadow: inset 3px 0 0 hsl(var(--primary)); }
+  .key { flex: none; width: 24px; height: 24px; display: grid; place-items: center; border-radius: 6px; font-size: 12px; font-weight: 600;
+    border: 1px solid hsl(var(--input)); color: hsl(var(--muted-foreground)); }
+  .opt[aria-checked="true"] .key { background: hsl(var(--primary)); border-color: hsl(var(--primary)); color: #fff; }
+
+  /* Action bar */
+  .actions { flex: none; display: flex; gap: 8px; align-items: center; padding: 10px 16px; background: hsl(var(--card)); border-top: 1px solid hsl(var(--border)); }
+  .actions .grow { flex: 1; }
+  kbd { font: 11px ui-monospace, Menlo, monospace; padding: 1px 5px; border: 1px solid hsl(var(--input)); border-bottom-width: 2px; border-radius: 4px; color: hsl(var(--muted-foreground)); }
+
+  /* Palette */
+  aside { background: hsl(var(--card)); border-left: 1px solid hsl(var(--border)); display: flex; flex-direction: column; min-height: 0; }
+  aside .inner { flex: 1; overflow: auto; padding: 16px; }
+  aside h3 { margin: 0 0 12px; font-size: 13px; display: flex; justify-content: space-between; }
+  aside h3 span { color: hsl(var(--muted-foreground)); font-weight: 400; }
+  .legend { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 12px; margin-bottom: 16px; font-size: 12px; }
+  .legend div { display: flex; align-items: center; gap: 8px; }
+  .legend b { margin-left: auto; font-variant-numeric: tabular-nums; }
+  .group { margin: 14px 0 8px; font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: hsl(var(--muted-foreground)); }
+  .grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; }
+  .cell { position: relative; aspect-ratio: 1; min-height: 38px; border: 0; border-radius: 6px; font-size: 13px; font-weight: 500; font-variant-numeric: tabular-nums; }
+  /* status = colour AND shape, so it never relies on colour alone */
+  .s-none  { background: hsl(var(--muted)); color: hsl(var(--muted-foreground)); box-shadow: inset 0 0 0 1px hsl(var(--border)); }
+  .s-ans   { background: hsl(var(--success)); color: #fff; }
+  .s-skip  { background: hsl(var(--destructive)); color: #fff; }
+  .s-mark  { background: hsl(var(--primary)); color: #fff; border-radius: 999px; }
+  .s-both  { background: hsl(var(--primary)); color: #fff; border-radius: 999px; }
+  .s-both::after { content: ""; position: absolute; top: -2px; right: -2px; width: 10px; height: 10px; border-radius: 50%;
+    background: hsl(var(--success)); border: 2px solid hsl(var(--card)); }
+  .cell.current { outline: 2px solid hsl(var(--foreground)); outline-offset: 2px; }
+  .swatch { width: 14px; height: 14px; border-radius: 4px; flex: none; }
+  .swatch.s-mark, .swatch.s-both { border-radius: 999px; }
+  aside footer { flex: none; padding: 12px 16px; border-top: 1px solid hsl(var(--border)); }
+  aside footer .btn { width: 100%; }
+
+  .note { position: fixed; bottom: 12px; left: 12px; z-index: 5; display: flex; gap: 6px; flex-wrap: wrap; max-width: 60vw; }
+  .note .btn { height: 28px; font-size: 12px; padding: 0 10px; }
+
+  /* Narrow screens: palette becomes a bottom sheet trigger, action bar is sticky */
+  .mobile-only { display: none; }
+  @media (max-width: 900px) {
+    .body { grid-template-columns: 1fr; }
+    aside { display: none; }
+    .mobile-only { display: inline-flex; }
+    .scroll { padding: 16px; }
+    .stem { font-size: 16px; }
+    .hide-sm { display: none; }
+    .note { display: none; }
+  }
+  @media (prefers-reduced-motion: no-preference) { .opt, .cell, .btn { transition: background .12s, border-color .12s; } }
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <div class="title">
+      <b>Statistics for Data Science I</b>
+      <span>Quiz 1 · May 2025 · Exam mode</span>
+    </div>
+    <span class="spacer"></span>
+    <span class="timer" id="timer" role="timer" aria-label="Time remaining"><small class="hide-sm">Time left</small><span id="time">42:17</span></span>
+    <button class="iconbtn hide-sm" title="Calculator" aria-label="Calculator">▦</button>
+    <button class="iconbtn hide-sm" title="Notes" aria-label="Notes">✎</button>
+    <button class="iconbtn" id="theme" title="Toggle theme" aria-label="Toggle theme">◐</button>
+    <button class="btn danger hide-sm">Submit exam</button>
+  </header>
+  <div class="progress" title="Answered 12 of 30"><i></i></div>
+
+  <div class="body">
+    <main>
+      <div class="scroll">
+        <div class="q">
+          <div class="qhead">
+            <h2>Question 7 <span style="color:hsl(var(--muted-foreground));font-weight:400">of 30</span></h2>
+            <span class="chip">Single correct</span>
+            <span class="chip marks">+4 marks</span>
+            <button class="flagbtn" id="flag" aria-pressed="false">⚑ Mark for review</button>
+          </div>
+          <p class="stem">Sample question: which of the following is a measure of central tendency?</p>
+          <div class="opts" role="radiogroup" aria-label="Answer options" id="opts">
+            <button class="opt" role="radio" aria-checked="false"><span class="key">A</span>Variance</button>
+            <button class="opt" role="radio" aria-checked="true"><span class="key">B</span>Median</button>
+            <button class="opt" role="radio" aria-checked="false"><span class="key">C</span>Range</button>
+            <button class="opt" role="radio" aria-checked="false"><span class="key">D</span>Standard deviation</button>
+          </div>
+        </div>
+      </div>
+      <div class="actions">
+        <button class="btn">← Previous</button>
+        <button class="btn">Clear response</button>
+        <span class="grow"></span>
+        <button class="btn mobile-only" id="open-palette">☰ <span style="margin-left:4px">Palette</span></button>
+        <button class="btn">Mark for review &amp; next</button>
+        <button class="btn primary">Save &amp; next <kbd style="margin-left:6px;background:transparent;color:inherit;border-color:rgba(255,255,255,.5)">N</kbd></button>
+      </div>
+    </main>
+
+    <aside>
+      <div class="inner">
+        <h3>Question palette <span>7 / 30</span></h3>
+        <div class="legend">
+          <div><i class="swatch s-ans"></i>Answered<b>12</b></div>
+          <div><i class="swatch s-skip"></i>Not answered<b>4</b></div>
+          <div><i class="swatch s-mark"></i>Marked<b>2</b></div>
+          <div><i class="swatch s-both"></i>Answered &amp; marked<b>1</b></div>
+          <div><i class="swatch s-none"></i>Not visited<b>11</b></div>
+        </div>
+        <div id="palette"></div>
+      </div>
+      <footer><button class="btn primary">Review &amp; submit</button></footer>
+    </aside>
+  </div>
+</div>
+
+<div class="note">
+  <button class="btn" data-t="42:17|">Timer: normal</button>
+  <button class="btn" data-t="14:59|t15">Timer: 15 min</button>
+  <button class="btn" data-t="04:59|t5">Timer: 5 min</button>
+</div>
+
+<script>
+  // Palette: [group label, [status per question]]
+  var groups = [
+    ["Single correct · Q1–10", ["ans","ans","ans","skip","ans","both","cur","none","none","none"]],
+    ["Multi correct · Q11–20", ["ans","ans","mark","ans","ans","skip","ans","none","none","none"]],
+    ["Numerical · Q21–30", ["ans","mark","skip","ans","ans","none","none","none","none","none"]]
+  ];
+  var n = 0, html = "";
+  groups.forEach(function (g) {
+    html += '<div class="group">' + g[0] + '</div><div class="grid">';
+    g[1].forEach(function (s) {
+      n++;
+      var cls = s === "cur" ? "s-ans current" : "s-" + s;
+      var label = { ans: "answered", skip: "not answered", mark: "marked for review", both: "answered and marked", none: "not visited", cur: "current, answered" }[s];
+      html += '<button class="cell ' + cls + '" aria-label="Question ' + n + ', ' + label + '">' + n + '</button>';
+    });
+    html += "</div>";
+  });
+  document.getElementById("palette").innerHTML = html;
+
+  document.getElementById("theme").onclick = function () { document.documentElement.classList.toggle("dark"); };
+  var flag = document.getElementById("flag");
+  flag.onclick = function () { flag.setAttribute("aria-pressed", flag.getAttribute("aria-pressed") === "true" ? "false" : "true"); };
+  document.querySelectorAll("#opts .opt").forEach(function (b) {
+    b.onclick = function () {
+      document.querySelectorAll("#opts .opt").forEach(function (o) { o.setAttribute("aria-checked", "false"); });
+      b.setAttribute("aria-checked", "true");
+    };
+  });
+  document.querySelectorAll(".note .btn").forEach(function (b) {
+    b.onclick = function () {
+      var p = b.dataset.t.split("|");
+      document.getElementById("time").textContent = p[0];
+      document.getElementById("timer").className = "timer " + p[1];
+    };
+  });
+  if (window.matchMedia("(prefers-color-scheme: dark)").matches) document.documentElement.classList.add("dark");
+</script>
+</body>
+</html>

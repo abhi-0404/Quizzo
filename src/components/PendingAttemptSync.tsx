@@ -25,11 +25,9 @@ export function PendingAttemptSync() {
     (async () => {
       try {
         const attemptId = await saveAttempt({
-          userId: user.id,
           paperId: pending.paperId,
           mode: pending.mode,
           durationSeconds: pending.durationSeconds,
-          totalMarks: pending.totalMarks,
           answers: pending.answers as never,
         });
         clearPendingAttempt();
@@ -39,8 +37,15 @@ export function PendingAttemptSync() {
           { replace: true }
         );
       } catch (e) {
-        clearPendingAttempt();
-        toast.error(e instanceof Error ? e.message : "Could not save your attempt");
+        // A paper that no longer exists or a malformed payload will never
+        // succeed, so drop it. Anything else (network, rate limit) is kept and
+        // retried on the next load rather than throwing the student's work away.
+        const code = (e as { code?: string } | null)?.code;
+        if (code === "P0002" || code === "22023") clearPendingAttempt();
+        toast.error(
+          (e instanceof Error ? e.message : "Could not save your attempt") +
+            (code === "P0002" || code === "22023" ? "" : ". Your answers are kept and will be retried.")
+        );
       }
     })();
   }, [user, navigate]);

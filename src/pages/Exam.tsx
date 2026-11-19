@@ -1,19 +1,44 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { Calculator as CalculatorIcon, Camera, ChevronLeft, ChevronRight, Delete, FileText, Flag, Lightbulb, Moon, Sun, X } from "lucide-react";
+import {
+  Calculator as CalculatorIcon, Camera, ChevronDown, ChevronLeft, ChevronRight, Eraser,
+  Flag, Keyboard, LayoutGrid, MessageSquareWarning, Moon, MoreHorizontal, NotebookPen, RotateCcw, Send, Sun, WifiOff, X,
+} from "lucide-react";
 import { useTheme } from "next-themes";
 import { toast } from "sonner";
-import html2canvas from "html2canvas";
 import { useQuery } from "@tanstack/react-query";
+import { cn } from "@/lib/utils";
 import { loadPreviewPaper } from "@/data/preview-paper";
-import { loadPaper, saveAttempt, type LoadedQuestion } from "@/lib/pyq-read";
-import { gradeAnswer } from "@/lib/grade";
+import { loadPaper, saveAttempt, examTypeLabel, type LoadedQuestion } from "@/lib/pyq-read";
+import { reportQuestion, REPORT_REASON_LABEL, type ReportReason } from "@/lib/admin-stats";
+import { elapsedSeconds, addQuestionTime, toSeconds, type QuestionTimes } from "@/lib/exam-timing";
 import { savePendingAttempt } from "@/lib/pending-attempt";
+import {
+  afterMark, afterSave, afterVisit, answeredTotal, counts, findNext, hasAnswer, initialStatuses,
+  isMarked, pressNumericKey, toggleMark, type Answer, type QStatus,
+} from "@/lib/exam-session";
+import {
+  clearSession, emptyNotes, isResumable, loadNotes, loadSession, notedQuestions, saveNotes, saveSession,
+  type ExamNotes, type SavedSession,
+} from "@/lib/exam-persist";
 import { useAuth } from "@/contexts/AuthContext";
 import { UniversalRenderer } from "@/components/UniversalRenderer";
+import { QuizzoLoader } from "@/components/QuizzoLoader";
+import { StackedLogo } from "@/components/StackedLogo";
+import { Button } from "@/components/ui/button";
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { ExamTimer, formatClock } from "@/components/exam/ExamTimer";
+import { PaletteGrid, PaletteLegend, StatusSwatch, STATUS_LABEL } from "@/components/exam/QuestionPalette";
+import { NotesPanel, plainSnippet } from "@/components/exam/NotesPanel";
+import { OptionList } from "@/components/exam/OptionList";
+import { NumericPad } from "@/components/exam/NumericPad";
+import { Calculator } from "@/components/exam/Calculator";
+import { SolutionPanel, useRevealedAnswer, verdictsFor } from "@/components/exam/SolutionPanel";
+import { SubmitDialog } from "@/components/exam/SubmitDialog";
 import type { QuestionAsset } from "@/data/questions";
 
-type Status = "notVisited" | "notAnswered" | "answered" | "marked";
 type QType = "single" | "multi" | "comprehension" | "integer";
 
 interface Question {
@@ -23,89 +48,65 @@ interface Question {
   options: string[];
   passage?: string;
   marks: number;
-  /** Figures the stem, options or passage reference as `asset-<id>`. */
   assets?: QuestionAsset[];
-  /** Database id, so an attempt can record an answer against this question. */
   questionId?: string;
-  /** The key extracted from the source paper. Empty for the admin preview. */
-  correct?: number[];
-  numericalAnswer?: string;
 }
 
-const TOTAL_QUESTIONS = 30;
+const TYPE_LABEL: Record<string, string> = {
+  single: "Single correct",
+  multi: "Multiple correct",
+  integer: "Numerical",
+  comprehension: "Comprehension",
+};
 
-function makeQuestions(subject: string): Question[] {
-  const types: QType[] = ["single", "multi", "comprehension", "integer"];
-  return Array.from({ length: TOTAL_QUESTIONS }, (_, i) => {
-    const type = types[i % types.length];
-    return {
-      id: i + 1,
-      type,
-      text:
-        type === "integer"
-          ? `(${subject}) Question ${i + 1}: Compute the integer value corresponding to item ${i + 1}.`
-          : `(${subject}) Sample question ${i + 1}: Which of the following statements is correct regarding the concept illustrated in item ${i + 1}?`,
-      options:
-        type === "integer"
-          ? []
-          : [
-              `Option A for question ${i + 1}`,
-              `Option B for question ${i + 1}`,
-              `Option C for question ${i + 1}`,
-              `Option D for question ${i + 1}`,
-            ],
-      passage:
-        type === "comprehension"
-          ? `Read the following passage carefully and answer the question that follows.\n\nIn the context of ${subject}, researchers have long studied the phenomena described in item ${i + 1}. Consider the assumptions, relationships, and constraints. The passage discusses key definitions, examples, and counter-examples, providing enough context to reason about the correct choice below.`
-          : undefined,
-      marks: 4,
-    };
-  });
-}
-
-function statusClasses(s: Status) {
-  switch (s) {
-    case "answered":
-      return "bg-emerald-600 text-white";
-    case "notAnswered":
-      return "bg-rose-600 text-white";
-    case "marked":
-      return "bg-indigo-600 text-white";
-    default:
-      return "bg-gray-200 dark:bg-[#27272A] text-gray-700 dark:text-gray-300";
-  }
-}
-
-function formatTime(secs: number) {
-  const h = Math.floor(secs / 3600).toString().padStart(2, "0");
-  const m = Math.floor((secs % 3600) / 60).toString().padStart(2, "0");
-  const s = (secs % 60).toString().padStart(2, "0");
-  return `${h}:${m}:${s}`;
-}
-
-function LegendSwatch({ className, children }: { className: string; children: React.ReactNode }) {
-  return (
-    <div className={`w-8 h-8 rounded-md flex items-center justify-center font-medium text-sm ${className}`}>
-      {children}
-    </div>
-  );
-}
+const SHORTCUTS: [string, string][] = [
+  ["A-D / 1-4", "Choose an option"],
+  ["N", "Save & next"],
+  ["P", "Previous question"],
+  ["M", "Mark for review"],
+  ["X / Delete", "Clear response"],
+  ["T", "Notes for this question"],
+];
 
 function ThemeButton() {
-  const { theme, setTheme } = useTheme();
+  const { resolvedTheme, setTheme } = useTheme();
   return (
-    <button
-      onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-      className="relative h-9 w-9 flex items-center justify-center text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white transition-colors"
+    <Button
+      variant="ghost"
+      size="icon"
+      onClick={() => setTheme(resolvedTheme === "dark" ? "light" : "dark")}
+      aria-label="Toggle theme"
       title="Toggle theme"
+      className="relative h-9 w-9 text-muted-foreground hover:text-foreground"
     >
       <Sun className="h-4 w-4 rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />
       <Moon className="absolute h-4 w-4 rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
-    </button>
+    </Button>
   );
 }
 
-type Answer = number | number[] | string | null;
+function IconButton({ label, onClick, children, className }: { label: string; onClick: () => void; children: React.ReactNode; className?: string }) {
+  return (
+    <Button variant="ghost" size="icon" onClick={onClick} aria-label={label} title={label} className={cn("h-9 w-9 text-muted-foreground hover:text-foreground", className)}>
+      {children}
+    </Button>
+  );
+}
+
+function useOnline() {
+  const [online, setOnline] = useState(() => (typeof navigator === "undefined" ? true : navigator.onLine));
+  useEffect(() => {
+    const on = () => setOnline(true);
+    const off = () => setOnline(false);
+    window.addEventListener("online", on);
+    window.addEventListener("offline", off);
+    return () => {
+      window.removeEventListener("online", on);
+      window.removeEventListener("offline", off);
+    };
+  }, []);
+  return online;
+}
 
 export default function Exam() {
   const { slug = "degree", courseSlug = "exam" } = useParams();
@@ -115,16 +116,12 @@ export default function Exam() {
     () => (courseSlug ? courseSlug.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()) : "Exam"),
     [courseSlug]
   );
-  const examLabel = searchParams.get("exam") ?? "Quiz 1";
-  const sessionMode: "exam" | "practice" =
-    searchParams.get("mode") === "practice" ? "practice" : "exam";
+  const sessionMode: "exam" | "practice" = searchParams.get("mode") === "practice" ? "practice" : "exam";
   const isPractice = sessionMode === "practice";
 
-  /* ── Admin preview: run a paper authored in /admin/create ──────────────── */
+  /* ── Which paper ───────────────────────────────────────────────────────── */
   const isPreview = searchParams.get("preview") === "1";
   const previewPaper = useMemo(() => (isPreview ? loadPreviewPaper() : null), [isPreview]);
-
-  /* ── A published paper, addressed by id ────────────────────────────────── */
   const paperId = searchParams.get("paper");
   const { user } = useAuth();
   const { data: loaded, isLoading: paperLoading } = useQuery({
@@ -136,65 +133,323 @@ export default function Exam() {
   const questions: Question[] = useMemo(() => {
     if (loaded) return loaded.questions as Question[];
     if (previewPaper) return previewPaper.questions as Question[];
-    // Nothing addressed and nothing previewed — the sample paper, as before.
-    return makeQuestions(subject);
-  }, [loaded, previewPaper, subject]);
+    return [];
+  }, [loaded, previewPaper]);
 
+  const courseTitle = loaded?.paper.courseName ?? previewPaper?.subject ?? subject;
+  const examLabel = loaded ? `${examTypeLabel(loaded.paper.examType)} · ${loaded.paper.term} ${loaded.paper.year}` : "";
   const total = questions.length;
-  const durationMinutes =
-    loaded?.paper.durationMinutes ?? previewPaper?.durationMinutes ?? 60;
-  /** Only a real, published paper can be scored and recorded. */
+  const durationMinutes = loaded?.paper.durationMinutes ?? previewPaper?.durationMinutes ?? 60;
+  const totalSeconds = durationMinutes * 60;
+  const totalMarks = loaded?.paper.totalMarks ?? questions.reduce((n, q) => n + (q.marks || 0), 0);
   const isScored = !!loaded;
+  /** Key for persisted progress; the admin preview is never persisted. */
+  const persistKey = loaded?.paper.id ?? null;
 
-  const [started, setStarted] = useState(false);
+  /* ── Session state ─────────────────────────────────────────────────────── */
+  const [startedAt, setStartedAt] = useState<number | null>(null);
+  const started = startedAt !== null;
   const [agreed, setAgreed] = useState(false);
   const [current, setCurrent] = useState(0);
   const [answers, setAnswers] = useState<Record<number, Answer>>({});
-  const [statuses, setStatuses] = useState<Status[]>(() => {
-    const arr = Array<Status>(total).fill("notVisited");
-    arr[0] = "notAnswered";
-    return arr;
-  });
-  // Same reason as the clock: `total` is 0 until the paper loads.
-  useEffect(() => {
-    setStatuses((prev) => {
-      if (prev.length === total) return prev;
-      const arr = Array<Status>(total).fill("notVisited");
-      if (total > 0) arr[0] = "notAnswered";
-      return arr;
-    });
-  }, [total]);
-  const [seconds, setSeconds] = useState(isPractice ? 0 : durationMinutes * 60);
+  const [statuses, setStatuses] = useState<QStatus[]>([]);
   const [submitting, setSubmitting] = useState(false);
-  // The paper arrives after the first render, so the clock is set when it does.
-  useEffect(() => {
-    if (!isPractice) setSeconds(durationMinutes * 60);
-  }, [durationMinutes, isPractice]);
+  const [finished, setFinished] = useState(false);
+  const [checked, setChecked] = useState<Record<number, boolean>>({});
+
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [paletteCollapsed, setPaletteCollapsed] = useState(false);
-  const [solutionOpen, setSolutionOpen] = useState<Record<number, boolean>>({});
+  const [submitOpen, setSubmitOpen] = useState(false);
   const [calcOpen, setCalcOpen] = useState(false);
   const [notesOpen, setNotesOpen] = useState(false);
-  const [notes, setNotes] = useState("");
+  const [helpOpen, setHelpOpen] = useState(false);
+  const [notes, setNotes] = useState<ExamNotes>(emptyNotes);
+  /** Right panel on large screens: the question palette or the notes. */
+  const [railView, setRailView] = useState<"palette" | "notes">("palette");
   const [reportOpen, setReportOpen] = useState(false);
-  const [reportReason, setReportReason] = useState("Typo");
-  const [hintOpen, setHintOpen] = useState<Record<number, boolean>>({});
+  const [reportReason, setReportReason] = useState<ReportReason>("typo");
+  const [reportNote, setReportNote] = useState("");
+  const [reporting, setReporting] = useState(false);
+  const [passageOpen, setPassageOpen] = useState(true);
+
+  const questionMsRef = useRef<QuestionTimes>({});
+  const enteredAtRef = useRef<number | null>(null);
+  const currentRef = useRef(0);
   const questionRef = useRef<HTMLDivElement | null>(null);
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  const online = useOnline();
+
+  // Statuses follow the paper once it arrives (unless a resume already set them).
+  useEffect(() => {
+    setStatuses((prev) => (prev.length === total ? prev : initialStatuses(total)));
+  }, [total]);
+
+  // Notes stay with the paper across sessions.
+  useEffect(() => {
+    if (persistKey) setNotes(loadNotes(persistKey));
+  }, [persistKey]);
+  useEffect(() => {
+    if (!persistKey) return;
+    const id = window.setTimeout(() => saveNotes(persistKey, notes), 400);
+    return () => window.clearTimeout(id);
+  }, [notes, persistKey]);
+
+  /* ── Resume after a refresh ────────────────────────────────────────────── */
+  const saved = useMemo<SavedSession | null>(() => {
+    if (!persistKey || !total) return null;
+    const s = loadSession(persistKey, sessionMode, total);
+    return s && isResumable(s, isPractice, totalSeconds, Date.now()) ? s : null;
+  }, [persistKey, sessionMode, total, isPractice, totalSeconds]);
+
+  const begin = (resume: SavedSession | null) => {
+    const now = Date.now();
+    if (resume) {
+      setAnswers(resume.answers);
+      setStatuses(resume.statuses);
+      setCurrent(resume.current);
+      currentRef.current = resume.current;
+      questionMsRef.current = resume.questionMs;
+      setStartedAt(resume.startedAt);
+    } else {
+      if (persistKey) clearSession(persistKey, sessionMode);
+      setAnswers({});
+      setStatuses(initialStatuses(total));
+      setCurrent(0);
+      currentRef.current = 0;
+      questionMsRef.current = {};
+      setStartedAt(now);
+    }
+    enteredAtRef.current = now;
+  };
+
+  // Save progress (answers only, never paper content) while sitting.
+  useEffect(() => {
+    if (!started || !persistKey || finished) return;
+    const id = window.setTimeout(() => {
+      saveSession(persistKey, sessionMode, {
+        v: 1,
+        startedAt: startedAt!,
+        answers,
+        statuses,
+        questionMs: questionMsRef.current,
+        current,
+      });
+    }, 400);
+    return () => window.clearTimeout(id);
+  }, [answers, statuses, current, started, startedAt, persistKey, sessionMode, finished]);
+
+  // Ask before closing the tab mid-session.
+  useEffect(() => {
+    if (!started || finished) return;
+    const warn = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [started, finished]);
+
+  /* ── Navigation and answers ────────────────────────────────────────────── */
+  const bankQuestionTime = useCallback(() => {
+    if (enteredAtRef.current == null) return;
+    const now = Date.now();
+    questionMsRef.current = addQuestionTime(questionMsRef.current, currentRef.current, now - enteredAtRef.current);
+    enteredAtRef.current = now;
+  }, []);
+
+  const goTo = useCallback(
+    (idx: number) => {
+      if (idx < 0 || idx >= total) return;
+      bankQuestionTime();
+      currentRef.current = idx;
+      setCurrent(idx);
+      setStatuses((prev) => {
+        if (prev[idx] === afterVisit(prev[idx])) return prev;
+        const next = [...prev];
+        next[idx] = afterVisit(prev[idx]);
+        return next;
+      });
+      setPaletteOpen(false);
+      scrollRef.current?.scrollTo({ top: 0 });
+    },
+    [total, bankQuestionTime]
+  );
+
+  const q = questions[current];
+  const selected = answers[current];
+
+  const setStatus = (i: number, s: QStatus) =>
+    setStatuses((prev) => {
+      if (prev[i] === s) return prev;
+      const next = [...prev];
+      next[i] = s;
+      return next;
+    });
+
+  const chooseOption = (optIdx: number) => {
+    if (!q) return;
+    setAnswers((prev) => {
+      if (q.type === "multi") {
+        const cur = (prev[current] as number[] | undefined) ?? [];
+        return { ...prev, [current]: cur.includes(optIdx) ? cur.filter((i) => i !== optIdx) : [...cur, optIdx] };
+      }
+      return { ...prev, [current]: optIdx };
+    });
+  };
+
+  const pressKey = (k: string) =>
+    setAnswers((prev) => ({ ...prev, [current]: pressNumericKey(((prev[current] as string | undefined) ?? ""), k) }));
+
+  // Answering a marked question keeps the mark but shows it is answered, and
+  // vice versa, so the palette always tells the truth.
+  useEffect(() => {
+    if (!started || statuses.length !== total || total === 0) return;
+    const s = statuses[current];
+    if (s === "marked" || s === "answeredMarked") setStatus(current, afterMark(selected));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selected]);
+
+  const saveAndNext = () => {
+    setStatus(current, isMarked(statuses[current]) ? afterMark(selected) : afterSave(selected));
+    if (current < total - 1) goTo(current + 1);
+    else if (!hasAnswer(selected)) toast.info("This was the last question.");
+  };
+  const markAndNext = () => {
+    setStatus(current, afterMark(selected));
+    if (current < total - 1) goTo(current + 1);
+  };
+  const toggleFlag = () => setStatus(current, toggleMark(statuses[current], selected));
+  const clearResponse = () => {
+    if (!q) return;
+    setAnswers((prev) => ({ ...prev, [current]: q.type === "integer" ? "" : q.type === "multi" ? [] : null }));
+    setStatus(current, isMarked(statuses[current]) ? "marked" : "notAnswered");
+    setChecked((c) => ({ ...c, [current]: false }));
+  };
+
+  /* ── Practice: check answer ────────────────────────────────────────────── */
+  const isChecked = isPractice && !!checked[current];
+  const { data: currentKey } = useRevealedAnswer(
+    isScored ? (q as LoadedQuestion | undefined)?.questionId : undefined,
+    isChecked && !!user
+  );
+  const verdicts = isChecked && q ? verdictsFor(q.type, q.options.length, currentKey, selected) : undefined;
+  const checkAnswer = () => {
+    if (!user) {
+      toast.info("Sign in to check answers");
+      return;
+    }
+    setChecked((c) => ({ ...c, [current]: !c[current] }));
+    if (hasAnswer(selected)) setStatus(current, isMarked(statuses[current]) ? afterMark(selected) : afterSave(selected));
+  };
+
+  /* ── Submit ────────────────────────────────────────────────────────────── */
+  const finishSession = async () => {
+    setSubmitOpen(false);
+    if (!isScored || !loaded) {
+      setFinished(true);
+      navigate(`/${slug}/${courseSlug}/report?mode=${sessionMode}`);
+      return;
+    }
+    bankQuestionTime();
+    const sessionSeconds = startedAt == null ? 0 : elapsedSeconds(startedAt, Date.now());
+    const durationSeconds = isPractice ? sessionSeconds : Math.min(sessionSeconds, totalSeconds);
+    const responses = loaded.questions.map((lq: LoadedQuestion, i: number) => ({
+      questionId: lq.questionId,
+      response: answers[i] ?? null,
+      timeSeconds: toSeconds(questionMsRef.current[i] ?? 0),
+    }));
+    const pending = { paperId: loaded.paper.id, mode: sessionMode, durationSeconds, answers: responses, slug, courseSlug };
+
+    if (!user) {
+      savePendingAttempt(pending);
+      clearSession(loaded.paper.id, sessionMode);
+      setFinished(true);
+      toast.info("Sign in or create an account to see your score");
+      navigate("/auth");
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      const attemptId = await saveAttempt(pending);
+      clearSession(loaded.paper.id, sessionMode);
+      setFinished(true);
+      navigate(`/${slug}/${courseSlug}/report?attempt=${attemptId}&mode=${sessionMode}`);
+    } catch (e) {
+      savePendingAttempt(pending);
+      toast.error(
+        (e instanceof Error ? e.message : "Could not save your attempt") +
+          ". Your answers are kept on this device. Check your connection and submit again."
+      );
+    } finally {
+      setSubmitting(false);
+    }
+  };
+  const finishRef = useRef(finishSession);
+  finishRef.current = finishSession;
+  const onExpire = useCallback(() => {
+    toast.info("Time is up. Submitting your answers.");
+    void finishRef.current();
+  }, []);
+
+  /* ── Report a question ─────────────────────────────────────────────────── */
+  const canReport = isScored && !!loaded;
+  const submitReport = async () => {
+    if (!canReport || !loaded) return;
+    if (!user) {
+      toast.info("Sign in to report a problem with a question");
+      return;
+    }
+    setReporting(true);
+    try {
+      const outcome = await reportQuestion((loaded.questions[current] as LoadedQuestion).questionId, reportReason, reportNote);
+      toast.success(outcome === "filed" ? "Thanks, the report was sent to the team" : "You already reported this");
+      setReportOpen(false);
+      setReportNote("");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not send the report");
+    } finally {
+      setReporting(false);
+    }
+  };
 
   const captureQuestion = async () => {
     if (!questionRef.current) return;
     try {
+      const { default: html2canvas } = await import("html2canvas");
+      const root = document.documentElement;
       const canvas = await html2canvas(questionRef.current, {
-        backgroundColor: null,
-        scale: 2,
+        // Always a clean light capture on solid white, whatever the theme on
+        // screen: it is what reads best pasted into chats and notes, and the
+        // dark look depends on blend effects the capture cannot draw. A solid
+        // background also matters because figures are transparent; on a
+        // transparent canvas their invisible pixels show up as noise.
+        backgroundColor: "#ffffff",
+        scale: Math.min(2, window.devicePixelRatio || 1) * 1.5,
+        useCORS: true,
+        onclone: (doc) => {
+          // The capture renders a copy of the page in a hidden frame: force
+          // that copy to the light theme.
+          const html = doc.documentElement;
+          html.className = root.className.replace(/\bdark\b/g, "").trim() + " light";
+          html.style.cssText = root.style.cssText;
+          html.style.colorScheme = "light";
+          doc.body.style.background = "#ffffff";
+          doc.querySelectorAll("img").forEach((img) => {
+            // Lazy images never load in that hidden frame: load them now.
+            img.loading = "eager";
+            // No filters or blend modes in the capture: a transparent figure
+            // drawn on white already looks like ink on paper.
+            img.style.filter = "none";
+            img.style.mixBlendMode = "normal";
+          });
+        },
       });
       canvas.toBlob(async (blob) => {
         if (!blob) return;
         try {
-          await navigator.clipboard.write([
-            new ClipboardItem({ "image/png": blob }),
-          ]);
-          toast.success("Question copied to clipboard!");
+          await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
+          toast.success("Question copied to clipboard");
         } catch {
           toast.error("Clipboard not available");
         }
@@ -204,764 +459,572 @@ export default function Exam() {
     }
   };
 
-  const submitReport = () => {
-    toast.success(`Reported: ${reportReason}`);
-    setReportOpen(false);
-  };
-
-  /**
-   * Finish the session.
-   *
-   * A published paper is graded against the key extracted from the PDF and the
-   * attempt is stored, so the report shows what actually happened. The preview
-   * and sample papers have no key, so they just navigate as before.
-   */
-  const finishSession = async () => {
-    if (!isScored || !loaded) {
-      navigate(`/${slug}/${courseSlug}/report?mode=${sessionMode}`);
-      return;
-    }
-
-    const graded = loaded.questions.map((q: LoadedQuestion, i: number) => {
-      const outcome = gradeAnswer(q, answers[i] as never);
-      return {
-        questionId: q.questionId,
-        response: answers[i] ?? null,
-        status: outcome.status,
-        marks: outcome.marks,
-        timeSeconds: 0,
-      };
-    });
-
-    if (!user) {
-      // Signed-out students can still sit and finish a paper — grading needs
-      // no account. Only the save does, so the graded result is held until
-      // sign-in/sign-up produces a session, instead of being discarded here.
-      savePendingAttempt({
-        paperId: loaded.paper.id,
-        mode: sessionMode,
-        durationSeconds: isPractice ? seconds : durationMinutes * 60 - seconds,
-        totalMarks: loaded.paper.totalMarks,
-        answers: graded,
-        slug,
-        courseSlug,
-      });
-      toast.info("Sign in or create an account to save your score");
-      navigate("/auth");
-      return;
-    }
-
-    setSubmitting(true);
-    try {
-      const attemptId = await saveAttempt({
-        userId: user.id,
-        paperId: loaded.paper.id,
-        mode: sessionMode,
-        durationSeconds: isPractice ? seconds : durationMinutes * 60 - seconds,
-        totalMarks: loaded.paper.totalMarks,
-        answers: graded as never,
-      });
-      navigate(`/${slug}/${courseSlug}/report?attempt=${attemptId}&mode=${sessionMode}`);
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Could not save your attempt");
-      navigate(`/${slug}/${courseSlug}/report?mode=${sessionMode}`);
-    } finally {
-      setSubmitting(false);
+  /** Notes live in the right panel on large screens, in a side sheet of the same width elsewhere. */
+  const openNotes = () => {
+    if (window.matchMedia("(min-width: 1024px)").matches) {
+      setPaletteCollapsed(false);
+      setRailView((v) => (v === "notes" && !paletteCollapsed ? "palette" : "notes"));
+    } else {
+      setNotesOpen(true);
     }
   };
 
-  const timerRef = useRef<number | null>(null);
-
+  /* ── Keyboard shortcuts ────────────────────────────────────────────────── */
+  // The calculator floats and never blocks the question, so shortcuts keep working with it open.
+  const anyDialog = submitOpen || notesOpen || reportOpen || helpOpen || paletteOpen;
+  const keyHandler = useRef<(e: KeyboardEvent) => void>(() => undefined);
+  keyHandler.current = (e: KeyboardEvent) => {
+    if (!started || finished || anyDialog || !q) return;
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    const t = e.target as HTMLElement | null;
+    if (t && (t.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(t.tagName))) return;
+    const k = e.key.toLowerCase();
+    if (q.type === "integer") {
+      if (/^[0-9.]$/.test(e.key) || e.key === "-") { e.preventDefault(); pressKey(e.key); return; }
+      if (e.key === "Backspace") { e.preventDefault(); pressKey("back"); return; }
+    } else {
+      const visible = q.options.map((o, i) => (o?.trim() ? i : -1)).filter((i) => i >= 0);
+      const pos = "abcdefgh".indexOf(k) >= 0 ? "abcdefgh".indexOf(k) : /^[1-8]$/.test(k) ? Number(k) - 1 : -1;
+      if (pos >= 0 && pos < visible.length) { e.preventDefault(); chooseOption(visible[pos]); return; }
+    }
+    if (k === "n" || e.key === "ArrowRight") { e.preventDefault(); saveAndNext(); }
+    else if (k === "p" || e.key === "ArrowLeft") { e.preventDefault(); goTo(current - 1); }
+    else if (k === "m") { e.preventDefault(); toggleFlag(); }
+    else if (k === "x" || e.key === "Delete") { e.preventDefault(); clearResponse(); }
+    else if (k === "t") { e.preventDefault(); openNotes(); }
+    else if (k === "?") { e.preventDefault(); setHelpOpen(true); }
+  };
   useEffect(() => {
-    if (!started) return;
-    timerRef.current = window.setInterval(() => {
-      setSeconds((s) => (isPractice ? s + 1 : s > 0 ? s - 1 : 0));
-    }, 1000);
-    return () => {
-      if (timerRef.current) window.clearInterval(timerRef.current);
-    };
-  }, [started, isPractice]);
+    const h = (e: KeyboardEvent) => keyHandler.current(e);
+    window.addEventListener("keydown", h);
+    return () => window.removeEventListener("keydown", h);
+  }, []);
 
-  const goTo = (idx: number) => {
-    setCurrent(idx);
-    setStatuses((prev) => {
-      if (prev[idx] === "notVisited") {
-        const next = [...prev];
-        next[idx] = "notAnswered";
-        return next;
-      }
-      return prev;
-    });
-    setPaletteOpen(false);
-  };
+  const statusCounts = useMemo(() => counts(statuses), [statuses]);
+  const noted = useMemo(() => notedQuestions(notes), [notes]);
+  const questionText = useCallback((i: number) => questions[i]?.text ?? "", [questions]);
 
-  const q = questions[current];
-  const selected = answers[current];
+  /* ── Loading / empty ───────────────────────────────────────────────────── */
+  if (paperLoading) return <QuizzoLoader fullscreen label="Loading paper" />;
 
-  const selectSingle = (optIdx: number) => {
-    setAnswers((prev) => ({ ...prev, [current]: optIdx }));
-  };
-
-  const toggleMulti = (optIdx: number) => {
-    setAnswers((prev) => {
-      const cur = (prev[current] as number[] | undefined) ?? [];
-      const next = cur.includes(optIdx) ? cur.filter((i) => i !== optIdx) : [...cur, optIdx];
-      return { ...prev, [current]: next };
-    });
-  };
-
-  const pressKey = (k: string) => {
-    setAnswers((prev) => {
-      const cur = (prev[current] as string | undefined) ?? "";
-      if (k === "back") return { ...prev, [current]: cur.slice(0, -1) };
-      if (k === "clear") return { ...prev, [current]: "" };
-      if (k === "." && cur.includes(".")) return prev;
-      if (cur.length >= 12) return prev;
-      return { ...prev, [current]: cur + k };
-    });
-  };
-
-  const isAnswered = (a: Answer): boolean => {
-    if (a == null) return false;
-    if (Array.isArray(a)) return a.length > 0;
-    if (typeof a === "string") return a.trim().length > 0;
-    return true;
-  };
-
-  const saveAndNext = () => {
-    setStatuses((prev) => {
-      const next = [...prev];
-      next[current] = isAnswered(answers[current]) ? "answered" : "notAnswered";
-      return next;
-    });
-    if (current < total - 1) goTo(current + 1);
-  };
-
-  const markAndNext = () => {
-    setStatuses((prev) => {
-      const next = [...prev];
-      next[current] = "marked";
-      return next;
-    });
-    if (current < total - 1) goTo(current + 1);
-  };
-
-  const clearResponse = () => {
-    setAnswers((prev) => ({ ...prev, [current]: q.type === "integer" ? "" : q.type === "multi" ? [] : null }));
-    setStatuses((prev) => {
-      const next = [...prev];
-      next[current] = "notAnswered";
-      return next;
-    });
-  };
-
-  // -------- Instruction View --------
-  // A paper addressed by id is not there on first render; showing the sample
-  // paper for a beat would be worse than showing nothing.
-  if (paperLoading) {
+  if (!loaded && !previewPaper) {
     return (
-      <div className="flex h-screen items-center justify-center bg-gray-50 dark:bg-[#0B0B0F] text-gray-600 dark:text-gray-400">
-        Loading paper…
-      </div>
-    );
-  }
-
-  if (paperId && !loaded && !isPreview) {
-    return (
-      <div className="flex h-screen flex-col items-center justify-center gap-3 bg-gray-50 dark:bg-[#0B0B0F] text-gray-600 dark:text-gray-400">
-        <p>That paper is not available.</p>
-        <Link to={`/${slug}/${courseSlug}`} className="underline underline-offset-2">
+      <div className="flex min-h-[100dvh] flex-col items-center justify-center gap-3 bg-background px-6 text-center text-muted-foreground">
+        <StackedLogo size={28} />
+        <p className="text-[15px] text-foreground">{paperId ? "That paper is not available." : "Choose a paper from the course page to begin."}</p>
+        <Link to={`/${slug}/${courseSlug}`} className="text-[13px] underline underline-offset-4 hover:text-foreground">
           Back to the course
         </Link>
       </div>
     );
   }
 
+  /* ── Instructions ──────────────────────────────────────────────────────── */
   if (!started) {
+    const savedAnswered = saved ? answeredTotal(counts(saved.statuses)) : 0;
+    const savedLeft = saved && !isPractice ? Math.max(0, Math.round((saved.startedAt + totalSeconds * 1000 - Date.now()) / 1000)) : 0;
     return (
-      <div className="min-h-screen bg-gray-50 dark:bg-[#0B0B0F] text-gray-900 dark:text-white">
-        <div className="max-w-4xl mx-auto py-8 px-4 pb-32">
-          <div className="flex items-center justify-between mb-6">
-            <div className="flex items-center gap-3">
-              <Link
-                to={`/${slug}/${courseSlug}`}
-                className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white"
-              >
-                <ChevronLeft size={16} /> Back
-              </Link>
-              <h1 className="text-2xl font-bold text-gray-900 dark:text-white">General Instructions</h1>
-            </div>
-            <ThemeButton />
+      <div className="min-h-[100dvh] bg-background text-foreground">
+        <header className="sticky top-0 z-30 border-b border-border bg-background/90 backdrop-blur">
+          <div className="mx-auto flex h-14 max-w-4xl items-center gap-3 px-4">
+            <Link to={`/${slug}/${courseSlug}`} className="inline-flex items-center gap-1 text-[13px] text-muted-foreground hover:text-foreground">
+              <ChevronLeft className="h-4 w-4" /> Back
+            </Link>
+            <span className="h-4 w-px bg-border" />
+            <StackedLogo size={14} />
+            <span className="min-w-0 truncate text-[13px] font-semibold">{courseTitle}</span>
+            <div className="ml-auto"><ThemeButton /></div>
           </div>
+        </header>
 
-          <div className="bg-white dark:bg-[#16161D] rounded-xl p-6 border border-gray-200 dark:border-gray-800">
-            <div className="mb-4 text-xs uppercase tracking-wider text-gray-500 dark:text-gray-400">
-              Mode: <span className="text-gray-900 dark:text-white font-semibold">{isPractice ? "Practice" : "Exam"}</span>
-            </div>
-            <div className="space-y-3 text-sm text-gray-700 dark:text-gray-300">
-              <p>1. The session contains {total} questions.{isPractice ? " There is no time limit; a stopwatch tracks your time." : ` Total duration is ${durationMinutes} minutes.`}</p>
-              <p>2. {isPractice ? "The stopwatch starts as soon as you begin and can be ended anytime." : "The timer starts as soon as you click \"Begin Exam\" and cannot be paused."}</p>
-              <p>3. Questions include Single Correct, Multi Correct, Comprehension, and Integer types.</p>
-              <p>4. Use "Save & Next" to record your answer and move forward.</p>
-              <p>5. Use "Mark for Review & Next" to revisit a question later.</p>
-              <p>6. Use "Clear Response" to remove your current selection.</p>
-              {isPractice && <p>7. Use "Show Solution" to reveal the correct answer and explanation for the current question.</p>}
-            </div>
-
-            <h2 className="mt-8 mb-4 text-base font-semibold text-gray-900 dark:text-white">Question Status Legend</h2>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="flex items-center gap-3">
-                <LegendSwatch className="bg-emerald-600">1</LegendSwatch>
-                <span className="text-sm text-gray-700 dark:text-gray-300">Answered</span>
-              </div>
-              <div className="flex items-center gap-3">
-                <LegendSwatch className="bg-rose-600">2</LegendSwatch>
-                <span className="text-sm text-gray-700 dark:text-gray-300">Not answered</span>
-              </div>
-              <div className="flex items-center gap-3">
-                <LegendSwatch className="bg-gray-200 dark:bg-[#27272A] text-gray-700 dark:text-gray-300">3</LegendSwatch>
-                <span className="text-sm text-gray-700 dark:text-gray-300">Not visited</span>
-              </div>
-              <div className="flex items-center gap-3">
-                <LegendSwatch className="bg-indigo-600">4</LegendSwatch>
-                <span className="text-sm text-gray-700 dark:text-gray-300">Marked for review</span>
-              </div>
-            </div>
-          </div>
-
-          <div className="mt-6 flex flex-wrap items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
-            <span>
-              Subject: <span className="text-gray-900 dark:text-white">
-                {previewPaper?.subject ?? subject}
-              </span> · {examLabel}
+        <main className="mx-auto max-w-4xl px-4 pb-36 pt-6 sm:pt-10">
+          <p className="text-[12px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
+            {isPractice ? "Practice mode" : "Exam mode"}
+          </p>
+          <h1 className="mt-1 text-2xl font-semibold tracking-tight sm:text-3xl">{courseTitle}</h1>
+          {examLabel && <p className="mt-1 text-[14px] text-muted-foreground">{examLabel}</p>}
+          {isPreview && (
+            <span className="mt-3 inline-flex rounded-md border border-warning/40 bg-warning/10 px-2 py-0.5 text-[12px] font-medium text-foreground">
+              Admin preview: nothing is recorded
             </span>
-            {isPreview && (
-              <span className="inline-flex items-center rounded border border-amber-200 dark:border-amber-900 bg-amber-50 dark:bg-[#1E1707] px-2 py-0.5 text-[11px] font-medium text-amber-700 dark:text-amber-400">
-                Admin preview — nothing is recorded
-              </span>
-            )}
-          </div>
-        </div>
+          )}
 
-        <div className="fixed bottom-0 inset-x-0 bg-white dark:bg-[#16161D] border-t border-gray-200 dark:border-gray-800">
-          <div className="max-w-4xl mx-auto px-4 py-3 flex items-center justify-between gap-4">
-            <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300 cursor-pointer select-none">
+          <dl className="mt-6 grid grid-cols-3 gap-px overflow-hidden rounded-lg border border-border bg-border">
+            {[
+              ["Questions", String(total)],
+              [isPractice ? "Time" : "Duration", isPractice ? "Untimed" : `${durationMinutes} min`],
+              ["Marks", String(totalMarks)],
+            ].map(([k, v]) => (
+              <div key={k} className="bg-card px-3 py-3 sm:px-4">
+                <dt className="text-[11px] uppercase tracking-[0.08em] text-muted-foreground">{k}</dt>
+                <dd className="mt-0.5 text-lg font-semibold tabular-nums sm:text-xl">{v}</dd>
+              </div>
+            ))}
+          </dl>
+
+          {saved && (
+            <div className="mt-5 flex flex-col gap-3 rounded-lg border border-primary/40 bg-primary/[0.06] p-4 sm:flex-row sm:items-center">
+              <div className="min-w-0 flex-1">
+                <p className="text-[14px] font-semibold">You have an unfinished session</p>
+                <p className="text-[13px] text-muted-foreground">
+                  {savedAnswered} of {total} answered{!isPractice && ` · ${formatClock(savedLeft)} left on the clock`}
+                </p>
+              </div>
+              <div className="flex gap-2">
+                <Button variant="outline" onClick={() => begin(null)} className="gap-1.5"><RotateCcw className="h-4 w-4" /> Start over</Button>
+                <Button onClick={() => begin(saved)}>Resume</Button>
+              </div>
+            </div>
+          )}
+
+          <section className="mt-6 grid gap-4 lg:grid-cols-[1fr_300px]">
+            <div className="rounded-lg border border-border bg-card p-5">
+              <h2 className="text-[15px] font-semibold">Before you start</h2>
+              <ol className="mt-3 list-decimal space-y-2 pl-5 text-[14px] leading-relaxed text-muted-foreground marker:text-foreground">
+                <li>
+                  {isPractice
+                    ? "There is no time limit. A stopwatch shows how long you have spent."
+                    : `The timer runs for ${durationMinutes} minutes from when you begin and cannot be paused. The paper submits itself at 0:00.`}
+                </li>
+                <li><span className="text-foreground">Save &amp; Next</span> records your answer and moves on. Clicking a number in the palette jumps without saving the status.</li>
+                <li><span className="text-foreground">Mark for review</span> flags a question to come back to. An answered and marked question is still scored.</li>
+                <li><span className="text-foreground">Clear response</span> removes your answer to the current question.</li>
+                {isPractice && <li><span className="text-foreground">Check answer</span> shows the key and any worked solution for the question you are on.</li>}
+                <li>Your progress is saved on this device, so an accidental refresh will not lose it.</li>
+              </ol>
+            </div>
+            <div className="space-y-4">
+              <div className="rounded-lg border border-border bg-card p-5">
+                <h2 className="text-[15px] font-semibold">Palette legend</h2>
+                <ul className="mt-3 space-y-2.5">
+                  {(["answered", "notAnswered", "marked", "answeredMarked", "notVisited"] as QStatus[]).map((s, i) => (
+                    <li key={s} className="flex items-center gap-3 text-[13px]">
+                      <StatusSwatch status={s} className="h-7 w-7">{i + 1}</StatusSwatch>
+                      <span className="text-muted-foreground">{STATUS_LABEL[s]}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+              <div className="hidden rounded-lg border border-border bg-card p-5 sm:block">
+                <h2 className="flex items-center gap-2 text-[15px] font-semibold"><Keyboard className="h-4 w-4" /> Shortcuts</h2>
+                <ul className="mt-3 space-y-1.5 text-[13px]">
+                  {SHORTCUTS.map(([k, v]) => (
+                    <li key={k} className="flex items-center justify-between gap-3">
+                      <span className="text-muted-foreground">{v}</span>
+                      <kbd className="rounded border border-b-2 border-border bg-muted px-1.5 font-mono text-[11px]">{k}</kbd>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          </section>
+        </main>
+
+        <div className="fixed inset-x-0 bottom-0 z-30 border-t border-border bg-card pb-[env(safe-area-inset-bottom)]">
+          <div className="mx-auto flex max-w-4xl flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+            <label className="flex cursor-pointer select-none items-center gap-2.5 text-[14px]">
               <input
                 type="checkbox"
                 checked={agreed}
                 onChange={(e) => setAgreed(e.target.checked)}
-                className="h-4 w-4 rounded border-gray-300 dark:border-gray-700"
+                className="h-4 w-4 rounded border-input accent-[hsl(var(--primary))]"
               />
-              I have read and understood the instructions.
+              I have read the instructions
             </label>
-            <button
-              disabled={!agreed}
-              onClick={() => setStarted(true)}
-              className="bg-gray-900 text-white dark:bg-gray-200 dark:text-black font-medium px-5 py-2.5 rounded-md text-sm disabled:opacity-40 disabled:cursor-not-allowed hover:opacity-90 transition-opacity"
-            >
-              {isPractice ? "Begin Practice" : "Begin Exam"}
-            </button>
+            <Button disabled={!agreed || total === 0} onClick={() => begin(null)} className="h-11 px-6 text-[14px] sm:h-10">
+              {isPractice ? "Begin practice" : "Begin exam"}
+            </Button>
           </div>
         </div>
       </div>
     );
   }
 
-  // -------- Exam View --------
-  const typeLabel =
-    q.type === "single"
-      ? "Single Correct"
-      : q.type === "multi"
-      ? "Multi Correct"
-      : q.type === "comprehension"
-      ? "Comprehension"
-      : "Integer Type";
+  /* ── Sitting ───────────────────────────────────────────────────────────── */
+  if (!q) return <QuizzoLoader fullscreen />;
+  const answered = answeredTotal(statusCounts);
+  const flagged = isMarked(statuses[current] ?? "notVisited");
+  const multi = q.type === "multi";
 
-  const Palette = (
-    <>
-      <div className="flex items-center justify-between">
-        <div className="text-sm font-semibold text-gray-900 dark:text-white">Question Palette</div>
-        <div className="flex items-center gap-2">
-          <div className="text-xs text-gray-500 dark:text-gray-400">
-            {current + 1} / {total}
-          </div>
-          <button
-            onClick={() => setPaletteCollapsed(true)}
-            className="hidden lg:inline-flex h-6 w-6 items-center justify-center rounded text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white"
-            title="Collapse palette"
-          >
-            <ChevronRight className="h-4 w-4" />
-          </button>
-        </div>
+  const questionBody = (
+    <div className="min-w-0">
+      <div className="text-[16px] leading-[1.7] text-foreground sm:text-[17px] 2xl:text-[18px] min-[2200px]:text-[20px] [overflow-wrap:anywhere]">
+        <UniversalRenderer content={q.text} assets={q.assets} />
       </div>
-
-      <div className="mt-4 space-y-2 text-xs">
-        <div className="flex items-center gap-2 text-gray-700 dark:text-gray-300">
-          <span className="w-3 h-3 rounded bg-emerald-600" /> Answered
-        </div>
-        <div className="flex items-center gap-2 text-gray-700 dark:text-gray-300">
-          <span className="w-3 h-3 rounded bg-rose-600" /> Not answered
-        </div>
-        <div className="flex items-center gap-2 text-gray-700 dark:text-gray-300">
-          <span className="w-3 h-3 rounded bg-indigo-600" /> Marked
-        </div>
-        <div className="flex items-center gap-2 text-gray-700 dark:text-gray-300">
-          <span className="w-3 h-3 rounded bg-gray-200 dark:bg-[#27272A]" /> Not visited
-        </div>
+      <div className="mt-5">
+        {q.type === "integer" ? (
+          <NumericPad value={(selected as string | undefined) ?? ""} onKey={pressKey} />
+        ) : (
+          <>
+            {multi && <p className="mb-2 text-[12px] font-medium text-muted-foreground">Select all that apply</p>}
+            <OptionList
+              options={q.options}
+              assets={q.assets}
+              multi={multi}
+              selected={selected as number | number[] | null | undefined}
+              onSelect={chooseOption}
+              verdicts={verdicts}
+            />
+          </>
+        )}
       </div>
-
-      <div className="grid grid-cols-5 gap-2 mt-4">
-        {statuses.map((s, i) => (
-          <button
-            key={i}
-            onClick={() => goTo(i)}
-            className={`w-9 h-9 rounded-md flex items-center justify-center font-medium text-sm transition-transform hover:scale-105 ${statusClasses(
-              s
-            )} ${i === current ? "ring-2 ring-offset-2 ring-offset-white dark:ring-offset-[#16161D] ring-gray-900 dark:ring-white" : ""}`}
-          >
-            {i + 1}
-          </button>
-        ))}
-      </div>
-    </>
-  );
-
-  const KeyBtn = ({ label, onClick, wide = false }: { label: React.ReactNode; onClick: () => void; wide?: boolean }) => (
-    <button
-      onClick={onClick}
-      className={`bg-gray-100 dark:bg-[#27272A] hover:bg-gray-200 dark:hover:bg-[#323238] text-gray-900 dark:text-white py-2 rounded-md font-medium text-sm transition-colors ${wide ? "col-span-3" : ""} flex items-center justify-center`}
-    >
-      {label}
-    </button>
-  );
-
-  /* The question's own text and its answer control — split out so a
-     comprehension sub-question (which also has a passage) can lay this out
-     beside the passage instead of stacked under it, without duplicating any
-     of the per-type answer logic below. */
-  const questionEl = (
-    <>
-      <p className="text-lg leading-relaxed text-gray-900 dark:text-white mb-6"><UniversalRenderer content={q.text} assets={q.assets} /></p>
-
-      {q.type === "single" && (
-        <div className="space-y-1">
-          {q.options.map((opt, i) => {
-            const isSelected = selected === i;
-            return (
-              <label
-                key={i}
-                className="flex items-center gap-3 py-2 px-1 -mx-1 rounded-md cursor-pointer hover:bg-gray-50 dark:hover:bg-white/5 transition-colors"
-              >
-                <input
-                  type="radio"
-                  name={`q-${current}`}
-                  checked={isSelected}
-                  onChange={() => selectSingle(i)}
-                  className="shrink-0 self-center h-4 w-4 accent-emerald-600"
-                />
-                <span className="text-sm text-gray-900 dark:text-white"><UniversalRenderer content={opt} assets={q.assets} /></span>
-              </label>
-            );
-          })}
-        </div>
+      {isChecked && (
+        <SolutionPanel
+          questionId={isScored ? (q as LoadedQuestion).questionId : undefined}
+          paperId={isScored ? loaded?.paper.id : undefined}
+          kind={q.type}
+          options={q.options}
+          picked={selected}
+          signedIn={!!user}
+        />
       )}
-
-      {q.type === "multi" && (
-        <div className="space-y-1">
-          {q.options.map((opt, i) => {
-            const arr = (selected as number[] | undefined) ?? [];
-            const isSelected = arr.includes(i);
-            return (
-              <label
-                key={i}
-                className="flex items-center gap-3 py-2 px-1 -mx-1 rounded-md cursor-pointer hover:bg-gray-50 dark:hover:bg-white/5 transition-colors"
-              >
-                <input
-                  type="checkbox"
-                  checked={isSelected}
-                  onChange={() => toggleMulti(i)}
-                  className="shrink-0 self-center h-4 w-4 accent-emerald-600"
-                />
-                <span className="text-sm text-gray-900 dark:text-white"><UniversalRenderer content={opt} assets={q.assets} /></span>
-              </label>
-            );
-          })}
-        </div>
-      )}
-
-      {q.type === "comprehension" && (
-        <div className="space-y-1">
-          {q.options.map((opt, i) => {
-            const isSelected = selected === i;
-            return (
-              <label
-                key={i}
-                className="flex items-center gap-3 py-2 px-1 -mx-1 rounded-md cursor-pointer hover:bg-gray-50 dark:hover:bg-white/5 transition-colors"
-              >
-                <input
-                  type="radio"
-                  name={`q-${current}`}
-                  checked={isSelected}
-                  onChange={() => selectSingle(i)}
-                  className="shrink-0 self-center h-4 w-4 accent-emerald-600"
-                />
-                <span className="text-sm text-gray-900 dark:text-white"><UniversalRenderer content={opt} assets={q.assets} /></span>
-              </label>
-            );
-          })}
-        </div>
-      )}
-
-      {q.type === "integer" && (
-        <div className="mt-2">
-          <input
-            readOnly
-            value={(selected as string | undefined) ?? ""}
-            placeholder="Your answer"
-            className="text-lg text-center h-11 w-full max-w-[220px] mx-auto block bg-white dark:bg-[#16161D] border border-gray-300 dark:border-gray-700 rounded-lg text-gray-900 dark:text-white outline-none"
-          />
-          <div className="grid grid-cols-3 gap-1.5 w-full max-w-[220px] mx-auto mt-3">
-            {["1","2","3","4","5","6","7","8","9",".","0"].map((k) => (
-              <KeyBtn key={k} label={k} onClick={() => pressKey(k)} />
-            ))}
-            <KeyBtn label={<Delete className="h-4 w-4" />} onClick={() => pressKey("back")} />
-          </div>
-          <div className="w-full max-w-[220px] mx-auto mt-1.5">
-            <button
-              onClick={() => pressKey("clear")}
-              className="w-full bg-gray-100 dark:bg-[#27272A] hover:bg-gray-200 dark:hover:bg-[#323238] text-gray-900 dark:text-white py-1.5 rounded-md font-medium text-xs transition-colors"
-            >
-              Clear All
-            </button>
-          </div>
-        </div>
-      )}
-    </>
+    </div>
   );
 
   return (
-    <div className="h-screen w-full flex flex-col overflow-hidden bg-gray-50 dark:bg-[#0B0B0F] text-gray-900 dark:text-white">
-      {/* Top Header */}
-      <header className="bg-white dark:bg-[#16161D] h-16 flex items-center justify-between px-4 border-b border-gray-200 dark:border-gray-800 shrink-0">
-        <div className="flex items-center gap-2 min-w-0">
-          <div className="text-sm font-semibold text-gray-900 dark:text-white truncate">{subject}</div>
-          <span className="hidden sm:inline text-[10px] uppercase tracking-wider px-2 py-0.5 rounded bg-gray-100 dark:bg-[#27272A] text-gray-700 dark:text-gray-300">
-            {isPractice ? "Practice" : "Exam"}
-          </span>
-        </div>
-        <div className="text-gray-900 dark:text-white font-mono text-xl tabular-nums">{formatTime(seconds)}</div>
-        <div className="flex items-center gap-3">
-          <button
-            onClick={() => setCalcOpen(true)}
-            title="Calculator"
-            aria-label="Calculator"
-            className="p-2 rounded-md text-gray-500 hover:text-gray-900 hover:bg-gray-200 dark:text-gray-400 dark:hover:text-white dark:hover:bg-[#323238] transition-colors"
-          >
-            <CalculatorIcon className="h-4 w-4" />
-          </button>
-          <button
-            onClick={() => setNotesOpen(true)}
-            title="Notes"
-            aria-label="Notes"
-            className="p-2 rounded-md text-gray-500 hover:text-gray-900 hover:bg-gray-200 dark:text-gray-400 dark:hover:text-white dark:hover:bg-[#323238] transition-colors"
-          >
-            <FileText className="h-4 w-4" />
-          </button>
-          <ThemeButton />
-          <button
-            onClick={() => void finishSession()}
+    <div className="flex h-[100dvh] w-full flex-col overflow-hidden bg-background text-foreground min-[2200px]:text-[17px]">
+      {/* Header */}
+      <header className="shrink-0 border-b border-border bg-card">
+        <div className="flex h-14 items-center gap-2 px-3 sm:gap-3 sm:px-4">
+          <StackedLogo size={16} />
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-[13px] font-semibold leading-tight sm:text-[14px]">{courseTitle}</p>
+            <p className="truncate text-[11px] leading-tight text-muted-foreground sm:text-[12px]">
+              {examLabel ? `${examLabel} · ` : ""}{isPractice ? "Practice" : "Exam"}
+            </p>
+          </div>
+          {!online && (
+            <span className="hidden items-center gap-1 rounded-md border border-warning/50 px-2 py-1 text-[11px] text-warning sm:inline-flex" title="Answers are saved on this device">
+              <WifiOff className="h-3.5 w-3.5" /> Offline
+            </span>
+          )}
+          <ExamTimer startedAt={startedAt!} totalSeconds={totalSeconds} practice={isPractice} onExpire={onExpire} />
+          <div className="hidden items-center md:flex">
+            <IconButton label="Calculator" onClick={() => setCalcOpen(true)}><CalculatorIcon className="h-4 w-4" /></IconButton>
+            <IconButton
+              label="Notes for this question"
+              onClick={openNotes}
+              className={cn(railView === "notes" && !paletteCollapsed && "lg:bg-muted lg:text-foreground")}
+            >
+              <NotebookPen className="h-4 w-4" />
+            </IconButton>
+            <IconButton label="Keyboard shortcuts" onClick={() => setHelpOpen(true)}><Keyboard className="h-4 w-4" /></IconButton>
+            <ThemeButton />
+          </div>
+          <Button
+            onClick={() => setSubmitOpen(true)}
             disabled={submitting}
-            className={`text-white text-sm font-medium px-4 py-2 rounded-md ${isPractice ? "bg-gray-800 hover:bg-gray-700 dark:bg-gray-200 dark:text-black dark:hover:bg-white" : "bg-rose-600 hover:bg-rose-500"}`}
+            className={cn("hidden h-9 bg-submit px-4 font-semibold text-submit-foreground shadow-sm hover:bg-submit/90 sm:inline-flex", !paletteCollapsed && "lg:hidden")}
           >
-            {isPractice ? "End Practice" : "Submit Exam"}
-          </button>
+            <Send className="h-4 w-4" /> {isPractice ? "End practice" : "Submit"}
+          </Button>
+        </div>
+        <div className="h-[3px] bg-muted" aria-hidden>
+          <div className="h-full bg-success transition-[width] duration-300" style={{ width: `${total ? (100 * answered) / total : 0}%` }} />
         </div>
       </header>
 
-      {/* Main Grid */}
-      <div className={`grid flex-1 min-h-0 ${paletteCollapsed ? "lg:grid-cols-1" : "lg:grid-cols-4"}`}>
-        {/* Arena */}
-        <div className={`${paletteCollapsed ? "" : "lg:col-span-3 lg:border-r"} flex flex-col min-h-0 border-gray-200 dark:border-gray-800`}>
-          <div className="flex-1 overflow-y-auto p-6 pb-28 lg:pb-6">
-            <div ref={questionRef} className="bg-transparent">
-            <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
-              <div className="flex items-center gap-3 flex-wrap">
-                <h2 className="text-base font-semibold text-gray-900 dark:text-white">Question {current + 1}</h2>
-                <span className="bg-gray-100 dark:bg-[#27272A] text-gray-800 dark:text-gray-200 text-xs px-2 py-1 rounded">
-                  {typeLabel}
+      <div className="flex min-h-0 flex-1">
+        {/* Question column */}
+        <main className="flex min-w-0 flex-1 flex-col">
+          <div ref={scrollRef} className="ghost-scroll flex-1 overflow-y-auto">
+            <div
+              ref={questionRef}
+              className={cn(
+                "mx-auto w-full px-4 pb-8 pt-5 sm:px-6 sm:pt-7",
+                q.passage ? "max-w-6xl 2xl:max-w-[1500px]" : "max-w-3xl 2xl:max-w-4xl"
+              )}
+            >
+              {/* Question meta */}
+              <div className="mb-4 flex flex-wrap items-center gap-2">
+                <h2 className="text-[15px] font-semibold">
+                  Question {current + 1} <span className="font-normal text-muted-foreground">of {total}</span>
+                </h2>
+                <span className="rounded-full border border-border bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+                  {TYPE_LABEL[q.type]}
                 </span>
-                <span className="text-sm text-gray-500 dark:text-gray-400 font-medium">
-                  [+{q.marks} Marks]
+                <span className="rounded-full border border-success/40 px-2 py-0.5 text-[11px] font-medium text-success">
+                  +{q.marks} {q.marks === 1 ? "mark" : "marks"}
                 </span>
-              </div>
-              <div className="flex items-center gap-2" data-html2canvas-ignore="true">
-                <button
-                  onClick={captureQuestion}
-                  title="Screenshot"
-                  aria-label="Screenshot"
-                  className="p-1.5 rounded text-gray-400 hover:text-gray-700 hover:bg-gray-200 dark:hover:text-gray-200 dark:hover:bg-[#27272A] transition-colors"
-                >
-                  <Camera className="h-4 w-4" />
-                </button>
-                <button
-                  onClick={() => setReportOpen(true)}
-                  title="Report Error"
-                  aria-label="Report Error"
-                  className="p-1.5 rounded text-gray-400 hover:text-gray-700 hover:bg-gray-200 dark:hover:text-gray-200 dark:hover:bg-[#27272A] transition-colors"
-                >
-                  <Flag className="h-4 w-4" />
-                </button>
-                {isPractice && (
+                <div className="ml-auto flex shrink-0 items-center gap-1" data-html2canvas-ignore="true">
                   <button
-                    onClick={() => setHintOpen((p) => ({ ...p, [current]: !p[current] }))}
-                    title="Hint"
-                    aria-label="Hint"
-                    className="p-1.5 rounded text-gray-400 hover:text-gray-700 hover:bg-gray-200 dark:hover:text-gray-200 dark:hover:bg-[#27272A] transition-colors"
+                    type="button"
+                    onClick={toggleFlag}
+                    aria-pressed={flagged}
+                    className={cn(
+                      "inline-flex h-8 items-center gap-1.5 rounded-md border px-2.5 text-[12px] font-medium transition-colors",
+                      flagged ? "border-review bg-review/15 text-review" : "border-border text-muted-foreground hover:text-foreground"
+                    )}
                   >
-                    <Lightbulb className="h-4 w-4" />
+                    <Flag className={cn("h-3.5 w-3.5", flagged && "fill-current")} />
+                    <span className="sm:hidden">{flagged ? "Marked" : "Mark"}</span>
+                    <span className="hidden sm:inline">{flagged ? "Marked" : "Mark for review"}</span>
                   </button>
-                )}
-              </div>
-            </div>
-
-            {/* A previewed comprehension keeps its child's real type (multi /
-                numerical), so key the passage off the passage itself.
-                Side-by-side rather than stacked: a passage read once applies
-                to several sub-questions, so it stays put on the left while
-                only the right side changes as the student moves between them. */}
-            {q.passage ? (
-              <div className="flex flex-col lg:flex-row gap-4">
-                <div className="lg:w-1/2 lg:max-h-[65vh] overflow-y-auto bg-gray-100 dark:bg-[#1E1E24] p-4 rounded-lg border border-gray-200 dark:border-gray-800 text-gray-800 dark:text-gray-200 whitespace-pre-line text-sm">
-                  <UniversalRenderer content={q.passage} assets={q.assets} />
-                </div>
-                <div className="lg:w-1/2 min-w-0">{questionEl}</div>
-              </div>
-            ) : (
-              questionEl
-            )}
-            </div>
-
-            {isPractice && hintOpen[current] && (
-              <div className="mt-4 bg-amber-50 dark:bg-amber-500/10 border border-amber-300 dark:border-amber-500/40 rounded-lg p-4 text-sm text-amber-900 dark:text-amber-200 flex gap-3">
-                <Lightbulb className="h-4 w-4 mt-0.5 shrink-0" />
-                <div>
-                  <div className="font-semibold mb-1">Hint</div>
-                  <p className="leading-relaxed">Recall the core definition relevant to question {current + 1}, then narrow down the options by eliminating the ones that violate the primary constraint.</p>
-                </div>
-              </div>
-            )}
-
-
-            {isPractice && solutionOpen[current] && (() => {
-              /* The answer used to be invented from the question's position on
-                 screen. It now comes from the key extracted out of the paper —
-                 which is the entire point of the import pipeline. */
-              const key = q.correct ?? [];
-              const hasKey = isScored && (key.length > 0 || !!q.numericalAnswer);
-              const answerLabel =
-                q.type === "integer"
-                  ? q.numericalAnswer
-                  : [...key].sort((a, b) => a - b).map((i) => String.fromCharCode(65 + i)).join(", ");
-
-              return (
-                <div className="bg-gray-50 dark:bg-[#16161D] border border-emerald-500/50 rounded-lg p-5 mt-4">
-                  <div className="text-emerald-700 dark:text-emerald-400 font-bold text-sm mb-2 flex items-center gap-2">
-                    <span className="inline-block h-2 w-2 rounded-full bg-emerald-500" />
-                    Solution
+                  <div className="hidden items-center gap-1 sm:flex">
+                    <IconButton label="Copy question as image" onClick={captureQuestion} className="h-8 w-8"><Camera className="h-4 w-4" /></IconButton>
+                    <IconButton label="Report a problem" onClick={() => setReportOpen(true)} className="h-8 w-8"><MessageSquareWarning className="h-4 w-4" /></IconButton>
                   </div>
-                  {hasKey ? (
-                    <div className="mb-1">
-                      <span className="inline-block bg-emerald-100 dark:bg-emerald-900/30 text-emerald-800 dark:text-emerald-300 px-3 py-1 rounded text-sm font-semibold">
-                        Correct Answer: {answerLabel}
-                      </span>
-                    </div>
-                  ) : (
-                    <p className="text-gray-700 dark:text-gray-300 text-sm">
-                      This paper carries no answer key.
-                    </p>
-                  )}
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="ghost" size="icon" aria-label="More actions" className="h-8 w-8 text-muted-foreground sm:hidden">
+                        <MoreHorizontal className="h-4 w-4" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem onSelect={() => void captureQuestion()}><Camera className="mr-2 h-4 w-4" /> Copy as image</DropdownMenuItem>
+                      <DropdownMenuItem onSelect={() => setReportOpen(true)}><MessageSquareWarning className="mr-2 h-4 w-4" /> Report a problem</DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 </div>
-              );
-            })()}
-          </div>
+              </div>
 
-          {/* Action Bar */}
-          <div className="bg-white dark:bg-[#16161D] border-t border-gray-200 dark:border-gray-800 p-3 flex flex-wrap gap-2 justify-between shrink-0">
-            <div className="flex flex-wrap gap-2">
-              <button
-                onClick={markAndNext}
-                className="bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium px-4 py-2 rounded-md"
-              >
-                Mark for Review &amp; Next
-              </button>
-              <button
-                onClick={clearResponse}
-                className="bg-gray-200 dark:bg-[#27272A] text-gray-800 dark:text-white text-sm font-medium px-4 py-2 rounded-md hover:opacity-90"
-              >
-                Clear Response
-              </button>
-              {isPractice && (
-                <button
-                  onClick={() => setSolutionOpen((prev) => ({ ...prev, [current]: !prev[current] }))}
-                  className="bg-gray-800 text-white dark:bg-white dark:text-black font-medium text-sm px-4 py-2 rounded-md hover:opacity-90"
-                >
-                  {solutionOpen[current] ? "Hide Solution" : "Show Solution"}
-                </button>
+              {q.passage ? (
+                <div className="grid gap-5 lg:grid-cols-2 lg:gap-8">
+                  <section aria-label="Passage" className="min-w-0 lg:sticky lg:top-0 lg:max-h-[calc(100dvh-14rem)] lg:overflow-y-auto">
+                    <button
+                      type="button"
+                      onClick={() => setPassageOpen((o) => !o)}
+                      className="flex w-full items-center justify-between rounded-t-lg border border-b-0 border-border bg-muted px-4 py-2 text-[12px] font-semibold uppercase tracking-[0.08em] text-muted-foreground lg:pointer-events-none"
+                      aria-expanded={passageOpen}
+                    >
+                      Passage
+                      <ChevronDown className={cn("h-4 w-4 transition-transform lg:hidden", !passageOpen && "-rotate-90")} />
+                    </button>
+                    <div className={cn("rounded-b-lg border border-border bg-card p-4 text-[15px] leading-[1.7] whitespace-pre-line", !passageOpen && "hidden lg:block")}>
+                      <UniversalRenderer content={q.passage} assets={q.assets} />
+                    </div>
+                  </section>
+                  {questionBody}
+                </div>
+              ) : (
+                questionBody
               )}
             </div>
-            <button
-              onClick={saveAndNext}
-              className="bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-medium px-4 py-2 rounded-md"
-            >
-              Save &amp; Next
-            </button>
           </div>
-        </div>
 
-        {/* Palette - Desktop */}
-        {!paletteCollapsed && (
-          <aside className="hidden lg:flex bg-white dark:bg-[#16161D] h-full p-4 flex-col overflow-y-auto">
-            {Palette}
-          </aside>
-        )}
+          {/* Action bar */}
+          <div className="shrink-0 border-t border-border bg-card px-3 pt-2.5 pb-[calc(0.625rem+env(safe-area-inset-bottom))] sm:px-4">
+            <div className={cn("mx-auto flex w-full items-center gap-2", q.passage ? "max-w-6xl 2xl:max-w-[1500px]" : "max-w-3xl 2xl:max-w-4xl")}>
+              <Button variant="outline" onClick={() => goTo(current - 1)} disabled={current === 0} className="h-11 px-3 sm:h-10" aria-label="Previous question">
+                <ChevronLeft className="h-4 w-4" /><span className="hidden md:inline">Previous</span>
+              </Button>
+              <Button variant="outline" onClick={clearResponse} className="h-11 gap-1.5 px-3 sm:h-10" aria-label="Clear response">
+                <Eraser className="h-4 w-4" /><span className="hidden sm:inline xl:hidden">Clear</span><span className="hidden xl:inline">Clear response</span>
+              </Button>
+              {isPractice && (
+                <Button variant="outline" onClick={checkAnswer} className="h-11 px-3 sm:h-10" aria-pressed={isChecked}>
+                  {isChecked ? "Hide answer" : "Check"}
+                  <span className="hidden lg:inline">{isChecked ? "" : " answer"}</span>
+                </Button>
+              )}
+              <div className="flex-1" />
+              <Button variant="outline" onClick={() => setPaletteOpen(true)} className="h-11 gap-1.5 px-3 lg:hidden" aria-label="Open question palette">
+                <LayoutGrid className="h-4 w-4" />
+                <span className="tabular-nums text-[12px]">{answered}/{total}</span>
+              </Button>
+              <Button variant="outline" onClick={markAndNext} className="hidden h-10 px-3 sm:inline-flex">
+                <span className="xl:hidden">Mark &amp; next</span><span className="hidden xl:inline">Mark for review &amp; next</span>
+              </Button>
+              <Button onClick={saveAndNext} className="h-11 gap-1 px-4 sm:h-10">
+                Save &amp; next <ChevronRight className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+        </main>
+
+        {/* Right panel: one handle in the middle of its edge opens and closes it. */}
+        <div className="relative hidden shrink-0 lg:flex">
+          <button
+            type="button"
+            onClick={() => setPaletteCollapsed((c) => !c)}
+            aria-label={paletteCollapsed ? "Show the question panel" : "Hide the question panel"}
+            aria-expanded={!paletteCollapsed}
+            title={paletteCollapsed ? "Show panel" : "Hide panel"}
+            className="group absolute -left-4 top-1/2 z-20 flex h-16 w-4 -translate-y-1/2 items-center justify-center rounded-l-lg border border-r-0 border-border bg-card text-muted-foreground shadow-sm transition-colors hover:bg-muted hover:text-foreground"
+          >
+            {paletteCollapsed ? <ChevronLeft className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+          </button>
+          {!paletteCollapsed && (
+            <aside className="flex w-80 flex-col border-l border-border bg-card 2xl:w-[340px] min-[2200px]:w-[380px]">
+              {railView === "palette" ? (
+                <>
+                  <div className="ghost-scroll min-h-0 flex-1 overflow-y-auto p-4">
+                    <PaletteGrid statuses={statuses} current={current} noted={noted} onGo={goTo} />
+                  </div>
+                  <div className="shrink-0 space-y-3 border-t border-border bg-muted/40 p-3">
+                    <PaletteLegend statuses={statuses} />
+                    <Button
+                      onClick={() => setSubmitOpen(true)}
+                      disabled={submitting}
+                      className="h-11 w-full gap-2 bg-submit text-[14px] font-semibold text-submit-foreground shadow-sm hover:bg-submit/90"
+                    >
+                      <Send className="h-4 w-4" /> {isPractice ? "End practice" : "Review & submit"}
+                    </Button>
+                  </div>
+                </>
+              ) : (
+                <div className="flex min-h-0 flex-1 flex-col">
+                  <div className="flex h-11 shrink-0 items-center gap-2 border-b border-border pl-3 pr-1.5">
+                    <NotebookPen className="h-4 w-4 text-muted-foreground" />
+                    <span className="mr-auto text-[13px] font-semibold">Notes</span>
+                    <IconButton label="Close notes" onClick={() => setRailView("palette")} className="h-8 w-8"><X className="h-4 w-4" /></IconButton>
+                  </div>
+                <div className="min-h-0 flex-1 p-3">
+                  <NotesPanel
+                    notes={notes}
+                    onChange={setNotes}
+                    current={current}
+                    total={total}
+                    questionText={questionText}
+                    title={`${courseTitle}${examLabel ? ` · ${examLabel}` : ""}`}
+                    onGo={goTo}
+                  />
+                </div>
+                </div>
+              )}
+            </aside>
+          )}
+        </div>
       </div>
 
-      {/* Floating expand button when collapsed */}
-      {paletteCollapsed && (
-        <button
-          onClick={() => setPaletteCollapsed(false)}
-          className="hidden lg:flex fixed right-0 top-1/2 -translate-y-1/2 z-30 h-16 w-8 items-center justify-center rounded-l-md bg-white dark:bg-[#16161D] border border-r-0 border-gray-200 dark:border-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-100 hover:text-gray-900 dark:hover:bg-[#27272A] dark:hover:text-white transition-colors"
-          title="Expand palette"
-        >
-          <ChevronLeft className="h-4 w-4" />
-        </button>
-      )}
-
-      {/* Mobile palette trigger */}
-      <button
-        onClick={() => setPaletteOpen(true)}
-        className="lg:hidden fixed bottom-0 inset-x-0 bg-gray-900 text-white dark:bg-gray-200 dark:text-black font-medium py-3 text-sm z-30"
-      >
-        View Question Palette
-      </button>
-
-      {/* Mobile bottom sheet */}
-      {paletteOpen && (
-        <div className="lg:hidden fixed inset-0 z-40 flex items-end">
-          <div className="absolute inset-0 bg-black/60" onClick={() => setPaletteOpen(false)} />
-          <div className="relative w-full bg-white dark:bg-[#16161D] border-t border-gray-200 dark:border-gray-800 rounded-t-2xl p-4 max-h-[80vh] overflow-y-auto">
-            <div className="flex justify-between items-center mb-2">
-              <div className="text-sm font-semibold">Question Palette</div>
-              <button onClick={() => setPaletteOpen(false)} className="p-1 text-gray-500 hover:text-gray-900 dark:hover:text-white">
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-            {Palette}
+      {/* Mobile palette */}
+      <Sheet open={paletteOpen} onOpenChange={setPaletteOpen}>
+        <SheetContent side="bottom" className="max-h-[85dvh] overflow-y-auto rounded-t-2xl p-4 pb-[env(safe-area-inset-bottom)]">
+          <SheetHeader className="mb-3 text-left">
+            <SheetTitle className="text-[15px]">Question palette</SheetTitle>
+            <SheetDescription className="sr-only">Jump to any question and see its status</SheetDescription>
+          </SheetHeader>
+          <PaletteGrid statuses={statuses} current={current} noted={noted} onGo={goTo} />
+          <div className="mt-4"><PaletteLegend statuses={statuses} /></div>
+          <div className="sticky bottom-0 -mx-4 mt-4 grid grid-cols-2 gap-2 border-t border-border bg-card px-4 py-3 sm:hidden">
+            <Button variant="outline" onClick={() => { setPaletteOpen(false); setCalcOpen(true); }} className="h-11 gap-1.5"><CalculatorIcon className="h-4 w-4" /> Calculator</Button>
+            <Button variant="outline" onClick={() => { setPaletteOpen(false); setNotesOpen(true); }} className="h-11 gap-1.5"><NotebookPen className="h-4 w-4" /> Notes</Button>
+            <Button variant="outline" onClick={() => { setPaletteOpen(false); markAndNext(); }} className="h-11">Mark &amp; next</Button>
+            <Button
+              onClick={() => { setPaletteOpen(false); setSubmitOpen(true); }}
+              className="h-11 bg-submit font-semibold text-submit-foreground hover:bg-submit/90"
+            >
+              {isPractice ? "End practice" : "Submit"}
+            </Button>
           </div>
-        </div>
-      )}
+          <div className="mt-4 hidden grid-cols-3 gap-2 sm:grid lg:hidden">
+            <Button variant="outline" onClick={() => { setPaletteOpen(false); setCalcOpen(true); }} className="h-11 gap-1.5"><CalculatorIcon className="h-4 w-4" /> Calculator</Button>
+            <Button variant="outline" onClick={() => { setPaletteOpen(false); setNotesOpen(true); }} className="h-11 gap-1.5"><NotebookPen className="h-4 w-4" /> Notes</Button>
+            <Button
+              onClick={() => { setPaletteOpen(false); setSubmitOpen(true); }}
+              className="h-11 bg-submit font-semibold text-submit-foreground hover:bg-submit/90"
+            >
+              {isPractice ? "End practice" : "Review & submit"}
+            </Button>
+          </div>
+        </SheetContent>
+      </Sheet>
 
-      <Link to="#" className="hidden" />
-
-      {/* Calculator Modal */}
-      {calcOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/60" onClick={() => setCalcOpen(false)} />
-          <div className="relative bg-white dark:bg-[#16161D] border border-gray-200 dark:border-gray-800 rounded-lg">
-            <div className="flex items-center justify-between px-4 py-2 border-b border-gray-200 dark:border-gray-800">
-              <div className="text-sm font-semibold text-gray-900 dark:text-white flex items-center gap-2">
-                <CalculatorIcon className="h-4 w-4" /> Scientific Calculator
-              </div>
-              <button
-                onClick={() => setCalcOpen(false)}
-                className="p-1 text-gray-500 hover:text-gray-900 dark:hover:text-white"
-                aria-label="Close"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-            <iframe
-              src="https://www.tcsion.com/OnlineAssessment/ScientificCalculator/Calculator.html"
-              width={400}
-              height={500}
-              title="Calculator"
-              className="block bg-white"
+      {/* Notes (below lg; on large screens they live in the right panel) */}
+      <Sheet open={notesOpen} onOpenChange={setNotesOpen}>
+        <SheetContent side="right" className="flex w-80 max-w-[90vw] flex-col gap-3 p-3 pt-4 sm:max-w-none">
+          <SheetHeader className="pr-8 text-left">
+            <SheetTitle className="flex items-center gap-2 text-[15px]"><NotebookPen className="h-4 w-4" /> Notes</SheetTitle>
+            <SheetDescription className="text-[12px]">Saved on this device, per question.</SheetDescription>
+          </SheetHeader>
+          <div className="min-h-0 flex-1">
+            <NotesPanel
+              notes={notes}
+              onChange={setNotes}
+              current={current}
+              total={total}
+              questionText={questionText}
+              title={`${courseTitle}${examLabel ? ` · ${examLabel}` : ""}`}
+              onGo={goTo}
             />
           </div>
-        </div>
-      )}
+        </SheetContent>
+      </Sheet>
 
-      {/* Notes Drawer */}
-      {notesOpen && (
-        <div className="fixed inset-0 z-50 flex">
-          <div className="absolute inset-0 bg-black/60" onClick={() => setNotesOpen(false)} />
-          <div className="relative ml-auto h-full w-full max-w-sm bg-white dark:bg-[#16161D] border-l border-gray-200 dark:border-gray-800 flex flex-col">
-            <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-gray-800">
-              <div className="text-sm font-semibold text-gray-900 dark:text-white flex items-center gap-2">
-                <FileText className="h-4 w-4" /> Notes
-              </div>
-              <button
-                onClick={() => setNotesOpen(false)}
-                className="p-1 text-gray-500 hover:text-gray-900 dark:hover:text-white"
-                aria-label="Close"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-            <textarea
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              placeholder="Rough work / notes for this session..."
-              className="flex-1 w-full resize-none bg-transparent p-4 text-sm text-gray-900 dark:text-white outline-none"
-            />
-            <div className="px-4 py-2 text-xs text-gray-500 dark:text-gray-400 border-t border-gray-200 dark:border-gray-800">
-              Notes persist during this session.
-            </div>
-          </div>
-        </div>
-      )}
+      <Calculator open={calcOpen} onOpenChange={setCalcOpen} />
 
-      {/* Report Error Modal */}
-      {reportOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/60" onClick={() => setReportOpen(false)} />
-          <div className="relative w-full max-w-sm bg-white dark:bg-[#16161D] border border-gray-200 dark:border-gray-800 rounded-lg">
-            <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-gray-800">
-              <div className="text-sm font-semibold text-gray-900 dark:text-white flex items-center gap-2">
-                <Flag className="h-4 w-4" /> Report Error
-              </div>
-              <button
-                onClick={() => setReportOpen(false)}
-                className="p-1 text-gray-500 hover:text-gray-900 dark:hover:text-white"
-                aria-label="Close"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-            <div className="p-4 space-y-3">
-              <label className="text-xs text-gray-500 dark:text-gray-400">Issue type</label>
+      {/* Shortcuts */}
+      <Dialog open={helpOpen} onOpenChange={setHelpOpen}>
+        <DialogContent className="w-[calc(100vw-1.5rem)] max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-[15px]"><Keyboard className="h-4 w-4" /> Keyboard shortcuts</DialogTitle>
+            <DialogDescription className="text-[12px]">Work only while no text box is focused.</DialogDescription>
+          </DialogHeader>
+          <ul className="space-y-2 text-[13px]">
+            {[...SHORTCUTS, ["← / →", "Previous / save & next"], ["?", "This list"]].map(([k, v]) => (
+              <li key={k} className="flex items-center justify-between gap-3">
+                <span className="text-muted-foreground">{v}</span>
+                <kbd className="rounded border border-b-2 border-border bg-muted px-1.5 font-mono text-[11px]">{k}</kbd>
+              </li>
+            ))}
+          </ul>
+        </DialogContent>
+      </Dialog>
+
+      {/* Report a problem */}
+      <Dialog open={reportOpen} onOpenChange={setReportOpen}>
+        <DialogContent className="w-[calc(100vw-1.5rem)] max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-[15px]"><Flag className="h-4 w-4" /> Report a problem</DialogTitle>
+            <DialogDescription className="text-[12px]">Question {current + 1}. The team reviews every report.</DialogDescription>
+          </DialogHeader>
+          {!canReport ? (
+            <p className="text-[13px] text-muted-foreground">Reports can only be sent for published papers.</p>
+          ) : !user ? (
+            <p className="text-[13px] text-muted-foreground">Sign in to report a problem with a question.</p>
+          ) : (
+            <div className="space-y-3">
+              <label className="block text-[12px] font-medium text-muted-foreground" htmlFor="report-reason">What is wrong?</label>
               <select
+                id="report-reason"
                 value={reportReason}
-                onChange={(e) => setReportReason(e.target.value)}
-                className="w-full bg-white dark:bg-[#0B0B0F] border border-gray-200 dark:border-gray-800 rounded-md text-sm px-3 py-2 text-gray-900 dark:text-white outline-none"
+                onChange={(e) => setReportReason(e.target.value as ReportReason)}
+                className="h-10 w-full rounded-md border border-input bg-background px-3 text-[14px] outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
-                <option>Typo</option>
-                <option>Wrong Answer</option>
-                <option>Missing Image</option>
-                <option>Unclear Question</option>
-                <option>Other</option>
+                {(Object.keys(REPORT_REASON_LABEL) as ReportReason[]).map((r) => (
+                  <option key={r} value={r}>{REPORT_REASON_LABEL[r]}</option>
+                ))}
               </select>
-              <button
-                onClick={submitReport}
-                className="w-full bg-gray-900 text-white dark:bg-white dark:text-black text-sm font-medium py-2 rounded-md hover:opacity-90"
-              >
-                Submit Report
-              </button>
+              <textarea
+                value={reportNote}
+                onChange={(e) => setReportNote(e.target.value)}
+                maxLength={500}
+                rows={3}
+                placeholder="Details (optional)"
+                className="w-full resize-none rounded-md border border-input bg-background px-3 py-2 text-[14px] outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              />
+              <Button onClick={() => void submitReport()} disabled={reporting} className="h-10 w-full">
+                {reporting ? "Sending…" : "Send report"}
+              </Button>
             </div>
-          </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      <SubmitDialog
+        open={submitOpen}
+        onOpenChange={setSubmitOpen}
+        counts={statusCounts}
+        practice={isPractice}
+        submitting={submitting}
+        onReviewUnanswered={() => {
+          setSubmitOpen(false);
+          const i = findNext(statuses, current, (s) => s === "notAnswered" || s === "notVisited" || s === "marked");
+          if (i >= 0) goTo(i);
+        }}
+        onReviewMarked={() => {
+          setSubmitOpen(false);
+          const i = findNext(statuses, current, isMarked);
+          if (i >= 0) goTo(i);
+        }}
+        onSubmit={() => void finishSession()}
+      />
+
+      {submitting && (
+        <div className="fixed inset-0 z-[60] bg-background/80 backdrop-blur-sm">
+          <QuizzoLoader fullscreen label="Submitting" className="bg-transparent" />
         </div>
       )}
-
     </div>
   );
 }

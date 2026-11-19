@@ -3,10 +3,10 @@ import type { QuestionAsset } from "@/data/questions";
 import type { ExamQuestion } from "@/data/preview-paper";
 import type { Database } from "@/integrations/supabase/types";
 import { figureUrl } from "./pyq-publish";
-import { gradeAnswer, type AnswerStatus, type Response } from "./grade";
+import type { AnswerStatus, Response } from "./grade";
 
-// Grading lives in ./grade so it stays importable without the Supabase client.
-export { gradeAnswer, summarise, matchesNumeric } from "./grade";
+// Grading happens in the database (`submit_attempt`); ./grade is the reference
+// implementation its tests pin down.
 export type { AnswerStatus, Response } from "./grade";
 
 /**
@@ -146,12 +146,13 @@ export async function listPapersForCourse(slug: string): Promise<PaperSummary[]>
     .sort((a, b) => b.examDate.localeCompare(a.examDate) || a.programme.localeCompare(b.programme));
 }
 
-/** A question as the runner consumes it, now carrying its answer key. */
+/**
+ * A question as the runner consumes it. The answer key is deliberately absent:
+ * it never reaches the browser until `revealAnswer` is asked for it.
+ */
 export interface LoadedQuestion extends ExamQuestion {
   /** Database id — needed so an attempt can record answers per question. */
   questionId: string;
-  correct: number[];
-  numericalAnswer: string;
 }
 
 export interface LoadedPaper {
@@ -177,16 +178,18 @@ export async function loadPaper(paperId: string): Promise<LoadedPaper | null> {
   if (error) throw error;
   if (!paperRow) return null;
 
-  const [{ data: questionRows }, { data: assetRows }] = await Promise.all([
-    supabase.from("questions").select("*").eq("paper_id", paperId).order("position"),
-    supabase
-      .from("question_assets")
-      .select("question_id, asset_key, storage_path, alt")
-      .in(
-        "question_id",
-        (await supabase.from("questions").select("id").eq("paper_id", paperId)).data?.map((q) => q.id) ?? []
-      ),
-  ]);
+  // Explicit columns: `correct` / `numerical_answer` are not selectable.
+  const { data: questionRows, error: questionsError } = await supabase
+    .from("questions")
+    .select("id, position, kind, marks, stem, passage, options")
+    .eq("paper_id", paperId)
+    .order("position");
+  if (questionsError) throw questionsError;
+
+  const { data: assetRows } = await supabase
+    .from("question_assets")
+    .select("question_id, asset_key, storage_path, alt")
+    .in("question_id", (questionRows ?? []).map((q) => q.id));
 
   const assetsByQuestion = new Map<string, QuestionAsset[]>();
   for (const a of assetRows ?? []) {
@@ -207,8 +210,6 @@ export async function loadPaper(paperId: string): Promise<LoadedPaper | null> {
     passage: row.passage || undefined,
     marks: Number(row.marks) || 0,
     assets: assetsByQuestion.get(row.id) ?? [],
-    correct: (row.correct as unknown as number[]) ?? [],
-    numericalAnswer: row.numerical_answer ?? "",
   }));
 
   const r = paperRow as typeof paperRow & {
@@ -243,61 +244,48 @@ export async function loadPaper(paperId: string): Promise<LoadedPaper | null> {
 export interface AttemptAnswerInput {
   questionId: string;
   response: Response;
-  status: AnswerStatus;
-  marks: number;
   timeSeconds: number;
 }
 
 export interface SaveAttemptInput {
-  userId: string;
   paperId: string;
   mode: Database["public"]["Enums"]["attempt_mode"];
   durationSeconds: number;
-  totalMarks: number;
   answers: AttemptAnswerInput[];
 }
 
-/** Persist a finished session. Returns the attempt id, or null if not signed in. */
-export async function saveAttempt(input: SaveAttemptInput): Promise<string | null> {
-  const score = input.answers.reduce((n, a) => n + a.marks, 0);
-  const counts = input.answers.reduce(
-    (acc, a) => ({ ...acc, [a.status]: (acc[a.status] ?? 0) + 1 }),
-    {} as Record<AnswerStatus, number>
-  );
-
-  const { data, error } = await supabase
-    .from("attempts")
-    .insert({
-      user_id: input.userId,
-      paper_id: input.paperId,
-      mode: input.mode,
-      submitted_at: new Date().toISOString(),
-      duration_seconds: input.durationSeconds,
-      score,
-      total_marks: input.totalMarks,
-      correct_count: counts.correct ?? 0,
-      incorrect_count: counts.incorrect ?? 0,
-      skipped_count: counts.skipped ?? 0,
-    })
-    .select("id")
-    .single();
+/**
+ * Submit a finished session. The database grades it and stores the result;
+ * nothing the client says about correctness or marks is trusted. Requires a
+ * signed-in user. Returns the new attempt id.
+ */
+export async function saveAttempt(input: SaveAttemptInput): Promise<string> {
+  const { data, error } = await supabase.rpc("submit_attempt", {
+    p_paper_id: input.paperId,
+    p_mode: input.mode,
+    p_duration_seconds: Math.max(0, Math.round(input.durationSeconds)),
+    p_answers: input.answers.map((a) => ({
+      question_id: a.questionId,
+      response: a.response ?? null,
+      time_seconds: Math.max(0, Math.round(a.timeSeconds)),
+    })) as never,
+  });
   if (error) throw error;
+  return data as string;
+}
 
-  // One row per question so the report can show per-question time and outcome.
-  const rows = input.answers.map((a) => ({
-    attempt_id: data.id,
-    question_id: a.questionId,
-    response: (a.response ?? null) as never,
-    status: a.status,
-    marks_awarded: a.marks,
-    time_seconds: a.timeSeconds,
-  }));
-  if (rows.length) {
-    const { error: answerError } = await supabase.from("attempt_answers").insert(rows);
-    if (answerError) throw answerError;
-  }
+export interface RevealedAnswer {
+  correct: number[];
+  numericalAnswer: string;
+}
 
-  return data.id;
+/** Practice mode's "Show Solution": fetched on demand, signed-in users only. */
+export async function revealAnswer(questionId: string): Promise<RevealedAnswer | null> {
+  const { data, error } = await supabase.rpc("reveal_answer", { p_question_id: questionId });
+  if (error) throw error;
+  if (!data) return null;
+  const d = data as { correct?: number[]; numerical_answer?: string };
+  return { correct: d.correct ?? [], numericalAnswer: d.numerical_answer ?? "" };
 }
 
 export interface AttemptDetail {

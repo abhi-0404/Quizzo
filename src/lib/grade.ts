@@ -1,11 +1,13 @@
 import type { Database } from "@/integrations/supabase/types";
 
 /**
- * Scoring for a sat paper.
+ * Reference implementation of paper scoring.
  *
- * Deliberately free of any Supabase import so it stays a pure function that can
- * be unit tested — and so the runner can grade a session before, or without,
- * ever writing an attempt.
+ * Production grading runs in the database (`submit_attempt` and
+ * `answer_matches_numeric` in supabase/migrations/20261107000000_production_hardening.sql),
+ * so the browser never holds the answer key and a score cannot be forged. This
+ * module is the specification those functions mirror, kept as a pure, unit-tested
+ * function. Change the two together.
  */
 
 export type AnswerStatus = Database["public"]["Enums"]["answer_status"];
