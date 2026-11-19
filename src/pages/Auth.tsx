@@ -68,7 +68,7 @@ export default function Auth() {
               </span>
             </Link>
 
-            <p className="text-xs font-bold tracking-[0.15em] text-zinc-500 uppercase text-center leading-relaxed">
+            <p className="text-xs font-bold tracking-[0.15em] text-muted-foreground uppercase text-center leading-relaxed">
               Practice Past Papers.
               <br />
               Track Your Progress.
@@ -81,7 +81,7 @@ export default function Auth() {
               Welcome Back!
             </h1>
 
-            <p className="text-sm text-zinc-500 dark:text-zinc-400 leading-relaxed max-w-sm mx-auto">
+            <p className="text-sm text-muted-foreground leading-relaxed max-w-sm mx-auto">
               Sign in with your Google account to continue your learning
               journey with Quizzo.
             </p>
@@ -149,12 +149,12 @@ export default function Auth() {
         <div className="border-t border-border/50 px-8 py-5 flex items-center justify-between">
           <Link
             to="/"
-            className="text-xs font-medium text-zinc-500 hover:text-foreground transition-colors"
+            className="text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
           >
             ← Back
           </Link>
 
-          <span className="text-xs font-medium text-zinc-500">
+          <span className="text-xs font-medium text-muted-foreground">
             © {new Date().getFullYear()} QUIZZO
           </span>
         </div>

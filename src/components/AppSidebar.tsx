@@ -1,4 +1,4 @@
-import { LayoutDashboard, FilePlus2, Library, CalendarDays, BarChart3, Settings, LogOut, Pin, PinOff } from "lucide-react";
+import { LayoutDashboard, FilePlus2, Library, CalendarDays, BarChart3, Settings, LogOut, Pin, PinOff, Users, Inbox, ClipboardCheck, FileUp, Home, UserCircle } from "lucide-react";
 import { StackedLogo } from "./StackedLogo";
 import { Link, useLocation } from "react-router-dom";
 import { useState } from "react";
@@ -12,8 +12,25 @@ export const navItems = [
   { icon: LayoutDashboard, label: "Overview", path: "/admin/overview" },
   { icon: FilePlus2, label: "Create Content", path: "/admin/create" },
   { icon: Library, label: "Question Bank", path: "/admin/bank" },
+  { icon: Inbox, label: "Review Inbox", path: "/admin/reviews" },
+  { icon: Users, label: "Contributors", path: "/admin/contributors" },
   { icon: CalendarDays, label: "Schedule", path: "/admin/schedule" },
   { icon: BarChart3, label: "Performance", path: "/admin/performance" },
+  { icon: Settings, label: "Settings", path: "/settings" },
+];
+
+/** The contributor portal: same shell, only the pages a reviewer needs. */
+export const contributorNavItems = [
+  { icon: LayoutDashboard, label: "Overview", path: "/contributor/overview" },
+  { icon: ClipboardCheck, label: "Papers to review", path: "/contributor/papers" },
+  { icon: FileUp, label: "My submissions", path: "/contributor/submissions" },
+  { icon: Settings, label: "Settings", path: "/settings" },
+];
+
+/** Settings is shared with students, who must not be shown admin links. */
+export const studentNavItems = [
+  { icon: Home, label: "Home", path: "/" },
+  { icon: UserCircle, label: "Profile", path: "/profile" },
   { icon: Settings, label: "Settings", path: "/settings" },
 ];
 
@@ -27,7 +44,11 @@ interface SidebarContentProps {
 
 export function SidebarContent({ collapsed = false, onNavigate, isPinned, onTogglePin }: SidebarContentProps) {
   const location = useLocation();
-  const { profile, signOut } = useAuth();
+  const { profile, signOut, isAdmin, isContributor } = useAuth();
+  // The same sidebar serves both areas; the URL decides which menu to show.
+  // Settings is shared, so an admin on /settings keeps the admin menu.
+  const inContributorArea = location.pathname.startsWith("/contributor");
+  const items = inContributorArea ? contributorNavItems : isAdmin ? navItems : isContributor ? contributorNavItems : studentNavItems;
 
   const initials = profile?.full_name
     ? profile.full_name.split(" ").map(n => n[0]).join("").toUpperCase().slice(0, 2)
@@ -58,7 +79,7 @@ export function SidebarContent({ collapsed = false, onNavigate, isPinned, onTogg
 
       {/* Nav */}
       <nav className="flex-1 py-1.5 px-1.5 space-y-px">
-        {navItems.map((item) => {
+        {items.map((item) => {
           const isActive = location.pathname === item.path || 
             (item.path !== "/" && location.pathname.startsWith(item.path));
           return (
@@ -70,7 +91,7 @@ export function SidebarContent({ collapsed = false, onNavigate, isPinned, onTogg
                 // border-l is always reserved so the active accent never shifts layout
                 "flex items-center gap-2 rounded border-l-2 px-2 py-1.5 text-[13px] transition-colors",
                 isActive
-                  ? "border-emerald-500 bg-sidebar-accent font-medium text-sidebar-accent-foreground"
+                  ? "border-primary bg-sidebar-accent font-medium text-sidebar-accent-foreground"
                   : "border-transparent text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
               )}
             >

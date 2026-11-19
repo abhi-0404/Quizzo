@@ -44,18 +44,6 @@ export const makeEntry = (year: number, term: TermKey, dates: string[]): Schedul
   assessments: DEFAULT_ASSESSMENT_NAMES.map((name, i) => ({ name, date: dates[i] ?? "" })),
 });
 
-/** Seed data — multiple years retained to demonstrate historical persistence. */
-export const SCHEDULE_SEED: ScheduleEntry[] = [
-  makeEntry(2026, "jan", ["2026-02-15", "2026-03-22", "2026-04-26"]),
-  makeEntry(2026, "may", ["2026-06-14", "2026-07-19", "2026-08-23"]),
-  makeEntry(2026, "sept", ["2026-10-11", "2026-11-15", "2026-12-20"]),
-  makeEntry(2025, "jan", ["2025-02-16", "2025-03-23", "2025-04-27"]),
-  makeEntry(2025, "may", ["2025-06-15", "2025-07-20", "2025-08-24"]),
-  makeEntry(2025, "sept", ["2025-10-12", "2025-11-16", "2025-12-21"]),
-  makeEntry(2024, "sept", ["2024-10-13", "2024-11-17", "2024-12-22"]),
-  makeEntry(2023, "may", ["2023-06-18", "2023-07-23", "2023-08-27"]),
-];
-
 /** Local-safe formatting — avoids the UTC shift of `new Date("YYYY-MM-DD")`. */
 export function formatDate(iso: string): string {
   if (!iso) return "Not scheduled";

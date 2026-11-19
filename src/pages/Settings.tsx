@@ -1,11 +1,16 @@
 import { useState, useEffect } from "react";
+import { Link, useNavigate } from "react-router-dom";
+import { useTheme } from "next-themes";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription,
+  AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { AppLayout } from "@/components/AppLayout";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { PasswordInput } from "@/components/ui/password-input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
@@ -13,9 +18,8 @@ import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
 import {
-  User, GraduationCap, Users, Bell, Settings as SettingsIcon,
-  Mail, Trash2, Shield, Send, AlertTriangle, Loader2, Camera,
-  Megaphone, Plus, X
+  User, Users, Settings as SettingsIcon,
+  Shield, Loader2, Camera,
 } from "lucide-react";
 
 // ─── Profile Tab ────────────────────────────────────────────────────────────────
@@ -111,11 +115,11 @@ function ProfileTab() {
         <div className="grid gap-3 sm:grid-cols-2 max-w-lg">
           <div className="space-y-1">
             <Label className="text-[12px]">Full Name</Label>
-            <Input value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="John Doe" className="h-8 text-[13px]" />
+            <Input value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="Your name" className="h-8 text-[13px]" />
           </div>
           <div className="space-y-1">
             <Label className="text-[12px]">Job Title</Label>
-            <Input value={jobTitle} onChange={(e) => setJobTitle(e.target.value)} placeholder="Software Engineer" className="h-8 text-[13px]" />
+            <Input value={jobTitle} onChange={(e) => setJobTitle(e.target.value)} placeholder="e.g. BS Data Science student" className="h-8 text-[13px]" />
           </div>
         </div>
         <Button onClick={handleSaveProfile} disabled={saving} size="sm" className="h-7 text-[12px] mt-3">
@@ -137,153 +141,41 @@ function ProfileTab() {
   );
 }
 
-// ─── Institution Tab ────────────────────────────────────────────────────────────
-// Static UI (no backend) — manages platform-level details and academic terms.
-
-function InstitutionTab() {
-  const [platformName, setPlatformName] = useState("Quizo");
-  const [institution, setInstitution] = useState("IIT Madras — Online Degree");
-  const [supportEmail, setSupportEmail] = useState("support@quizo.app");
-  const [terms, setTerms] = useState<string[]>(["Jan 2025", "May 2025", "Sep 2024"]);
-  const [newTerm, setNewTerm] = useState("");
-
-  const addTerm = () => {
-    const t = newTerm.trim();
-    if (t && !terms.includes(t)) setTerms((prev) => [...prev, t]);
-    setNewTerm("");
-  };
-  const removeTerm = (t: string) => setTerms((prev) => prev.filter((x) => x !== t));
-
-  return (
-    <div className="divide-y divide-border">
-      <div className="px-4 md:px-6 py-4">
-        <p className="text-[12px] text-muted-foreground font-medium mb-3">Platform Details</p>
-        <div className="grid gap-3 sm:grid-cols-2 max-w-lg">
-          <div className="space-y-1"><Label className="text-[12px]">Platform Name</Label>
-            <Input value={platformName} onChange={(e) => setPlatformName(e.target.value)} placeholder="Quizo" className="h-8 text-[13px]" /></div>
-          <div className="space-y-1"><Label className="text-[12px]">Institution</Label>
-            <Input value={institution} onChange={(e) => setInstitution(e.target.value)} placeholder="Institution name" className="h-8 text-[13px]" /></div>
-          <div className="space-y-1 sm:col-span-2"><Label className="text-[12px]">Support Email</Label>
-            <Input value={supportEmail} onChange={(e) => setSupportEmail(e.target.value)} placeholder="support@example.com" className="h-8 text-[13px]" /></div>
-        </div>
-      </div>
-
-      <div className="px-4 md:px-6 py-4">
-        <p className="text-[12px] text-muted-foreground font-medium mb-3">Active Academic Terms</p>
-        <div className="flex flex-wrap gap-2 mb-3">
-          {terms.map((t) => (
-            <span key={t} className="inline-flex items-center gap-1.5 rounded-full border border-border bg-secondary px-2.5 py-1 text-[12px] text-foreground">
-              {t}
-              <button onClick={() => removeTerm(t)} className="text-muted-foreground hover:text-foreground" aria-label={`Remove ${t}`}>
-                <X className="h-3 w-3" />
-              </button>
-            </span>
-          ))}
-          {terms.length === 0 && <span className="text-[12px] text-muted-foreground">No active terms.</span>}
-        </div>
-        <div className="flex gap-2 max-w-sm">
-          <Input
-            value={newTerm}
-            onChange={(e) => setNewTerm(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addTerm(); } }}
-            placeholder="e.g. Jan 2026"
-            className="h-8 text-[13px] flex-1"
-          />
-          <Button onClick={addTerm} disabled={!newTerm.trim()} size="sm" variant="outline" className="h-8 text-[12px] gap-1">
-            <Plus className="h-3 w-3" /> Add
-          </Button>
-        </div>
-      </div>
-
-      <div className="px-4 md:px-6 py-4">
-        <Button onClick={() => toast({ title: "Institution settings saved" })} size="sm" className="h-7 text-[12px]">
-          Save Changes
-        </Button>
-      </div>
-    </div>
-  );
-}
-
 // ─── Team Tab ───────────────────────────────────────────────────────────────────
+
+type TeamMember = { user_id: string; full_name: string; job_title: string; avatar_url: string; role: string };
 
 function TeamTab() {
   const { user } = useAuth();
-  const [members, setMembers] = useState<any[]>([]);
-  const [invitations, setInvitations] = useState<any[]>([]);
-  const [inviteEmail, setInviteEmail] = useState("");
-  const [inviteRole, setInviteRole] = useState<string>("user");
+  const [members, setMembers] = useState<TeamMember[]>([]);
   const [loading, setLoading] = useState(true);
-  const [sending, setSending] = useState(false);
 
-  const fetchData = async () => {
-    const [teamRes, invitationsRes] = await Promise.all([
-      supabase.rpc("get_team_members"),
-      supabase.from("invitations").select("*").eq("status", "pending"),
-    ]);
-    setMembers(teamRes.data || []);
-    setInvitations(invitationsRes.data || []);
-    setLoading(false);
-  };
-
-  useEffect(() => { fetchData(); }, []);
-
-  const handleInvite = async () => {
-    if (!user || !inviteEmail) return;
-    setSending(true);
-    const { error } = await supabase.from("invitations").insert({ email: inviteEmail, role: inviteRole as any, invited_by: user.id });
-    setSending(false);
-    if (error) toast({ title: "Error", description: error.message, variant: "destructive" });
-    else { toast({ title: "Invitation sent", description: `Invited ${inviteEmail}` }); setInviteEmail(""); fetchData(); }
-  };
-
-  const handleRevoke = async (id: string) => {
-    const { error } = await supabase.from("invitations").delete().eq("id", id);
-    if (error) toast({ title: "Error", description: error.message, variant: "destructive" });
-    else { toast({ title: "Invitation revoked" }); fetchData(); }
-  };
+  useEffect(() => {
+    (async () => {
+      const { data } = await supabase.rpc("get_team_members");
+      setMembers(data || []);
+      setLoading(false);
+    })();
+  }, []);
 
   if (loading) return <div className="flex justify-center py-12"><Loader2 className="h-4 w-4 animate-spin text-muted-foreground" /></div>;
 
   return (
     <div className="divide-y divide-border">
       <div className="px-4 md:px-6 py-4">
-        <p className="text-[12px] text-muted-foreground font-medium mb-3">Invite Team Member</p>
-        <div className="flex gap-2 max-w-lg">
-          <Input placeholder="colleague@company.com" value={inviteEmail} onChange={(e) => setInviteEmail(e.target.value)} className="h-8 text-[13px] flex-1" />
-          <Select value={inviteRole} onValueChange={setInviteRole}>
-            <SelectTrigger className="w-[100px] h-8 text-[12px]"><SelectValue /></SelectTrigger>
-            <SelectContent><SelectItem value="user">User</SelectItem><SelectItem value="moderator">Moderator</SelectItem><SelectItem value="admin">Admin</SelectItem></SelectContent>
-          </Select>
-          <Button onClick={handleInvite} disabled={sending || !inviteEmail} size="sm" className="h-8 text-[12px] gap-1">
-            {sending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Send className="h-3 w-3" />} Invite
-          </Button>
-        </div>
+        <p className="text-[12px] text-muted-foreground font-medium mb-1">Add reviewers</p>
+        <p className="text-[12px] text-muted-foreground max-w-lg">
+          Contributors check answer keys and upload worked solutions. They are added by email on their own page.
+        </p>
+        <Link to="/admin/contributors" className="mt-2 inline-block text-[12px] font-medium underline underline-offset-2">
+          Add contributors here
+        </Link>
       </div>
-
-      {invitations.length > 0 && (
-        <div className="px-4 md:px-6 py-4">
-          <p className="text-[12px] text-muted-foreground font-medium mb-3">Pending Invitations</p>
-          <div className="space-y-1">
-            {invitations.map((inv: any) => (
-              <div key={inv.id} className="flex items-center justify-between py-1.5 px-2 rounded hover:bg-muted">
-                <div className="flex items-center gap-2">
-                  <Mail className="h-3.5 w-3.5 text-muted-foreground" />
-                  <span className="text-[13px]">{inv.email}</span>
-                  <Badge variant="outline" className="text-[10px] h-4 px-1">{inv.role}</Badge>
-                </div>
-                <Button variant="ghost" size="sm" onClick={() => handleRevoke(inv.id)} className="h-6 w-6 p-0">
-                  <Trash2 className="h-3 w-3" />
-                </Button>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
 
       <div className="px-4 md:px-6 py-4">
         <p className="text-[12px] text-muted-foreground font-medium mb-3">Team Members · {members.length}</p>
         <div className="space-y-1">
-          {members.map((m: any) => (
+          {members.map((m) => (
             <div key={m.user_id} className="flex items-center justify-between py-1.5 px-2 rounded hover:bg-muted">
               <div className="flex items-center gap-2">
                 <Avatar className="h-5 w-5">
@@ -307,105 +199,38 @@ function TeamTab() {
   );
 }
 
-// ─── Notifications Tab ──────────────────────────────────────────────────────────
-// Static UI (no backend) — compose a global broadcast to students.
-
-function NotificationsTab() {
-  const [audience, setAudience] = useState("all");
-  const [message, setMessage] = useState("");
-  const [sending, setSending] = useState(false);
-
-  const AUDIENCES: Record<string, string> = {
-    all: "All Students",
-    ds: "Data Science Cohort",
-    active: "Students with Active Exams",
-  };
-
-  const RECENT = [
-    { audience: "All Students", text: "May 2025 term results are now published.", when: "2 days ago" },
-    { audience: "Data Science Cohort", text: "Quiz 2 window opens Monday at 9 AM.", when: "5 days ago" },
-  ];
-
-  const handleSend = () => {
-    if (!message.trim()) {
-      toast({ title: "Empty message", description: "Write something before broadcasting.", variant: "destructive" });
-      return;
-    }
-    setSending(true);
-    setTimeout(() => {
-      setSending(false);
-      toast({ title: "Broadcast sent", description: `Delivered to: ${AUDIENCES[audience]}` });
-      setMessage("");
-    }, 500);
-  };
-
-  return (
-    <div className="divide-y divide-border">
-      <div className="px-4 md:px-6 py-3 flex items-start gap-2 bg-muted">
-        <AlertTriangle className="h-3.5 w-3.5 text-muted-foreground mt-0.5 shrink-0" />
-        <p className="text-[12px] text-muted-foreground">Delivery provider not yet connected. Broadcasts are composed here and queued once messaging is configured.</p>
-      </div>
-
-      <div className="px-4 md:px-6 py-4">
-        <p className="text-[12px] text-muted-foreground font-medium mb-3">Global Broadcast</p>
-        <div className="max-w-lg space-y-3">
-          <div className="space-y-1">
-            <Label className="text-[12px]">Audience</Label>
-            <Select value={audience} onValueChange={setAudience}>
-              <SelectTrigger className="h-8 text-[13px]"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                {Object.entries(AUDIENCES).map(([k, v]) => <SelectItem key={k} value={k}>{v}</SelectItem>)}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-1">
-            <Label className="text-[12px]">Message</Label>
-            <Textarea
-              value={message}
-              onChange={(e) => setMessage(e.target.value)}
-              placeholder="Write an announcement for students…"
-              rows={4}
-              maxLength={1000}
-              className="text-[13px] resize-none"
-            />
-          </div>
-          <Button onClick={handleSend} disabled={sending} size="sm" className="h-8 text-[12px] gap-1.5">
-            {sending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Megaphone className="h-3.5 w-3.5" />}
-            Send Global Broadcast to Students
-          </Button>
-        </div>
-      </div>
-
-      <div className="px-4 md:px-6 py-4">
-        <p className="text-[12px] text-muted-foreground font-medium mb-3">Recent Broadcasts</p>
-        <div className="space-y-1">
-          {RECENT.map((b, i) => (
-            <div key={i} className="flex items-start justify-between gap-3 py-2 px-2 rounded hover:bg-muted">
-              <div className="min-w-0">
-                <p className="text-[13px] truncate">{b.text}</p>
-                <p className="text-[11px] text-muted-foreground mt-0.5">{b.audience}</p>
-              </div>
-              <span className="text-[11px] text-muted-foreground whitespace-nowrap">{b.when}</span>
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-}
-
 // ─── General Tab ────────────────────────────────────────────────────────────────
 
 function GeneralTab() {
-  const [theme, setThemeState] = useState<string>(() => {
-    if (typeof window !== "undefined") return document.documentElement.classList.contains("dark") ? "dark" : "light";
-    return "dark";
-  });
+  const { theme, setTheme } = useTheme();
+  const { user, signOut } = useAuth();
+  const navigate = useNavigate();
+  const [confirmText, setConfirmText] = useState("");
+  const [deleting, setDeleting] = useState(false);
 
-  const toggleTheme = (value: string) => {
-    setThemeState(value);
-    if (value === "dark") { document.documentElement.classList.add("dark"); localStorage.setItem("theme", "dark"); }
-    else { document.documentElement.classList.remove("dark"); localStorage.setItem("theme", "light"); }
+  const deleteAccount = async () => {
+    if (!user) return;
+    setDeleting(true);
+    try {
+      // Best effort: remove the avatar file(s); the account row removal below
+      // cascades to the profile, roles and attempts.
+      const { data: files } = await supabase.storage.from("avatars").list(user.id);
+      if (files?.length) {
+        await supabase.storage.from("avatars").remove(files.map((f) => `${user.id}/${f.name}`));
+      }
+      const { error } = await supabase.rpc("delete_my_account");
+      if (error) throw error;
+      await signOut().catch(() => undefined);
+      toast({ title: "Account deleted", description: "Your account and data have been removed." });
+      navigate("/", { replace: true });
+    } catch (e) {
+      toast({
+        title: "Could not delete the account",
+        description: e instanceof Error ? e.message : "Unknown error",
+        variant: "destructive",
+      });
+      setDeleting(false);
+    }
   };
 
   return (
@@ -414,7 +239,7 @@ function GeneralTab() {
         <p className="text-[12px] text-muted-foreground font-medium mb-3">Appearance</p>
         <div className="flex items-center justify-between max-w-lg">
           <span className="text-[13px]">Theme</span>
-          <Select value={theme} onValueChange={toggleTheme}>
+          <Select value={theme === "light" ? "light" : "dark"} onValueChange={setTheme}>
             <SelectTrigger className="w-[100px] h-7 text-[12px]"><SelectValue /></SelectTrigger>
             <SelectContent><SelectItem value="light">Light</SelectItem><SelectItem value="dark">Dark</SelectItem></SelectContent>
           </Select>
@@ -422,23 +247,36 @@ function GeneralTab() {
       </div>
 
       <div className="px-4 md:px-6 py-4">
-        <p className="text-[12px] text-muted-foreground font-medium mb-3">Defaults</p>
-        <div className="grid gap-3 sm:grid-cols-2 max-w-lg">
-          <div className="space-y-1"><Label className="text-[12px]">Default Difficulty</Label>
-            <Select defaultValue="medium"><SelectTrigger className="h-8 text-[13px]"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="easy">Easy</SelectItem><SelectItem value="medium">Medium</SelectItem><SelectItem value="hard">Hard</SelectItem></SelectContent></Select></div>
-          <div className="space-y-1"><Label className="text-[12px]">Default Exam Duration</Label>
-            <Select defaultValue="60"><SelectTrigger className="h-8 text-[13px]"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="30">30 minutes</SelectItem><SelectItem value="60">60 minutes</SelectItem><SelectItem value="90">90 minutes</SelectItem><SelectItem value="120">120 minutes</SelectItem></SelectContent></Select></div>
-        </div>
-      </div>
-
-      <div className="px-4 md:px-6 py-4">
         <p className="text-[12px] text-destructive font-medium mb-3">Danger Zone</p>
-        <div className="flex items-center justify-between max-w-lg border border-destructive/20 rounded-md p-3">
+        <div className="flex items-center justify-between gap-3 max-w-lg border border-destructive/20 rounded-md p-3">
           <div>
-            <p className="text-[13px] font-medium">Delete Account</p>
-            <p className="text-[12px] text-muted-foreground">Permanently delete your account and all data.</p>
+            <p className="text-[13px] font-medium">Delete account</p>
+            <p className="text-[12px] text-muted-foreground">Permanently delete your account, profile and attempt history. This cannot be undone.</p>
           </div>
-          <Button variant="destructive" size="sm" disabled className="h-7 text-[12px]">Coming Soon</Button>
+          <AlertDialog onOpenChange={(o) => { if (!o) setConfirmText(""); }}>
+            <AlertDialogTrigger asChild>
+              <Button variant="destructive" size="sm" className="h-7 text-[12px] shrink-0">Delete</Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Delete your account?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  Your profile and every attempt you have saved will be removed for good. Type <strong>DELETE</strong> to confirm.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <Input value={confirmText} onChange={(e) => setConfirmText(e.target.value)} placeholder="DELETE" className="h-8 text-[13px]" autoComplete="off" />
+              <AlertDialogFooter>
+                <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
+                <AlertDialogAction
+                  disabled={confirmText !== "DELETE" || deleting}
+                  onClick={(e) => { e.preventDefault(); void deleteAccount(); }}
+                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                >
+                  {deleting ? "Deleting…" : "Delete account"}
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         </div>
       </div>
     </div>
@@ -448,6 +286,9 @@ function GeneralTab() {
 // ─── Main Settings Page ─────────────────────────────────────────────────────────
 
 export default function Settings() {
+  // Team is an admin tool; the database refuses it to everyone else, so don't
+  // offer it.
+  const { isAdmin } = useAuth();
   return (
     <AppLayout>
       <div className="flex flex-col h-full">
@@ -462,15 +303,9 @@ export default function Settings() {
                 <TabsTrigger value="profile" className="justify-start gap-1.5 text-[12px] h-7 px-2 data-[state=active]:border-transparent data-[state=active]:bg-muted w-full">
                   <User className="h-3.5 w-3.5" /> Profile
                 </TabsTrigger>
-                <TabsTrigger value="institution" className="justify-start gap-1.5 text-[12px] h-7 px-2 data-[state=active]:border-transparent data-[state=active]:bg-muted w-full">
-                  <GraduationCap className="h-3.5 w-3.5" /> Institution
-                </TabsTrigger>
-                <TabsTrigger value="team" className="justify-start gap-1.5 text-[12px] h-7 px-2 data-[state=active]:border-transparent data-[state=active]:bg-muted w-full">
+                {isAdmin && (<TabsTrigger value="team" className="justify-start gap-1.5 text-[12px] h-7 px-2 data-[state=active]:border-transparent data-[state=active]:bg-muted w-full">
                   <Users className="h-3.5 w-3.5" /> Team
-                </TabsTrigger>
-                <TabsTrigger value="notifications" className="justify-start gap-1.5 text-[12px] h-7 px-2 data-[state=active]:border-transparent data-[state=active]:bg-muted w-full">
-                  <Bell className="h-3.5 w-3.5" /> Notifications
-                </TabsTrigger>
+                </TabsTrigger>)}
                 <TabsTrigger value="general" className="justify-start gap-1.5 text-[12px] h-7 px-2 data-[state=active]:border-transparent data-[state=active]:bg-muted w-full">
                   <SettingsIcon className="h-3.5 w-3.5" /> General
                 </TabsTrigger>
@@ -479,9 +314,7 @@ export default function Settings() {
 
             <div className="flex-1 min-w-0">
               <TabsContent value="profile" className="m-0"><ProfileTab /></TabsContent>
-              <TabsContent value="institution" className="m-0"><InstitutionTab /></TabsContent>
-              <TabsContent value="team" className="m-0"><TeamTab /></TabsContent>
-              <TabsContent value="notifications" className="m-0"><NotificationsTab /></TabsContent>
+              {isAdmin && <TabsContent value="team" className="m-0"><TeamTab /></TabsContent>}
               <TabsContent value="general" className="m-0"><GeneralTab /></TabsContent>
             </div>
           </Tabs>

@@ -1,5 +1,3 @@
-@import url('https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&display=swap');
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -18,7 +16,7 @@
     --popover: 0 0% 100%;
     --popover-foreground: 221 39% 11%;
 
-    --primary: 234 55% 58%;
+    --primary: 217 91% 50%;
     --primary-foreground: 0 0% 100%;
 
     /* gray-100 — interactive fills: hover, active tabs, segmented controls. */
@@ -31,39 +29,45 @@
     --accent: 220 14% 96%;
     --accent-foreground: 221 39% 11%;
 
-    --destructive: 345 72% 51%;
+    --destructive: 354 72% 50%;
     --destructive-foreground: 0 0% 100%;
 
-    --success: 142 70% 40%;
+    --success: 142 64% 38%;
     --success-foreground: 0 0% 100%;
 
-    --warning: 38 92% 50%;
+    --warning: 35 92% 48%;
     --warning-foreground: 0 0% 100%;
 
-    --info: 199 89% 48%;
+    --info: 217 91% 50%;
     --info-foreground: 0 0% 100%;
 
     /* Structure carries entirely on borders — gray-200 for dividers, gray-300 for inputs. */
     --border: 220 13% 91%;
     --input: 216 12% 84%;
-    --ring: 234 55% 58%;
+    --ring: 217 91% 50%;
 
     --radius: 0.375rem;
 
     /* Sidebar is a white surface against the gray-50 canvas. */
     --sidebar-background: 0 0% 100%;
     --sidebar-foreground: 215 14% 34%;
-    --sidebar-primary: 234 55% 58%;
+    --sidebar-primary: 217 91% 50%;
     --sidebar-primary-foreground: 0 0% 100%;
     --sidebar-accent: 220 14% 96%;
     --sidebar-accent-foreground: 221 39% 11%;
     --sidebar-border: 220 13% 91%;
-    --sidebar-ring: 234 55% 58%;
+    --sidebar-ring: 217 91% 50%;
 
-    --severity-critical: 345 72% 51%;
-    --severity-high: 25 95% 53%;
-    --severity-medium: 38 92% 50%;
-    --severity-low: 142 70% 40%;
+    --severity-critical: 354 72% 50%;
+    --severity-high: 35 92% 48%;
+    --severity-medium: 35 92% 48%;
+    --severity-low: 142 64% 38%;
+
+    /* Exam screen aliases of the brand colour (kept as names so components read clearly). */
+    --review: 217 91% 50%;
+    --review-foreground: 0 0% 100%;
+    --submit: 217 91% 50%;
+    --submit-foreground: 0 0% 100%;
   }
 
   .dark {
@@ -76,7 +80,7 @@
     --popover: 240 5% 9%;
     --popover-foreground: 0 0% 90%;
 
-    --primary: 234 55% 60%;
+    --primary: 217 91% 62%;
     --primary-foreground: 0 0% 100%;
 
     --secondary: 240 4% 14%;
@@ -88,35 +92,40 @@
     --accent: 240 4% 14%;
     --accent-foreground: 0 0% 90%;
 
-    --destructive: 345 90% 60%;
+    --destructive: 354 80% 62%;
     --destructive-foreground: 0 0% 100%;
 
-    --success: 145 100% 50%;
-    --success-foreground: 0 0% 100%;
+    --success: 142 60% 48%;
+    --success-foreground: 0 0% 0%;
 
-    --warning: 38 100% 55%;
+    --warning: 38 92% 56%;
     --warning-foreground: 0 0% 100%;
 
-    --info: 199 100% 55%;
+    --info: 217 91% 62%;
     --info-foreground: 0 0% 100%;
 
     --border: 240 4% 26%;
     --input: 240 4% 26%;
-    --ring: 234 55% 60%;
+    --ring: 217 91% 62%;
 
     --sidebar-background: 240 6% 5%;
     --sidebar-foreground: 0 0% 55%;
-    --sidebar-primary: 234 55% 60%;
+    --sidebar-primary: 217 91% 62%;
     --sidebar-primary-foreground: 0 0% 100%;
     --sidebar-accent: 240 5% 10%;
     --sidebar-accent-foreground: 0 0% 85%;
     --sidebar-border: 240 4% 26%;
-    --sidebar-ring: 234 55% 60%;
+    --sidebar-ring: 217 91% 62%;
 
-    --severity-critical: 345 90% 60%;
-    --severity-high: 25 100% 58%;
-    --severity-medium: 38 100% 55%;
-    --severity-low: 145 100% 50%;
+    --severity-critical: 354 80% 62%;
+    --severity-high: 38 92% 56%;
+    --severity-medium: 38 92% 56%;
+    --severity-low: 142 60% 48%;
+
+    --review: 217 91% 62%;
+    --review-foreground: 0 0% 100%;
+    --submit: 217 91% 62%;
+    --submit-foreground: 0 0% 100%;
   }
 }
 
@@ -409,11 +418,44 @@ body.is-scrolling * {
    larger than an option row's own text, which read as "zoomed in". Capped
    relative to the surrounding font size instead of a fixed pixel height, so
    it sits at roughly the height of the text line it's replacing. */
-.option-figure-scale img {
-  max-height: 2em !important;
+/* Figures from the paper (stems, options, passages) should read like text,
+   never like a pasted picture. Step 1 pushes the paper, including light-grey
+   code boxes and their faint borders, to pure white while dark ink stays dark.
+   Step 2 makes that white disappear into whatever is behind it: multiplied in
+   the light theme; inverted (hue turned back so coloured plots keep their
+   colours) and screened in the dark theme, where white becomes black and
+   vanishes. Works for transparent crops and for older opaque figures. */
+.qz-figure {
+  filter: brightness(1.1) contrast(1.25);
+  mix-blend-mode: multiply;
+}
+.dark .qz-figure,
+.theme-scope-dark .qz-figure {
+  filter: brightness(1.1) contrast(1.25) invert(1) hue-rotate(180deg);
+  mix-blend-mode: screen;
+}
+.theme-scope-light .qz-figure {
+  filter: brightness(1.1) contrast(1.25);
+  mix-blend-mode: multiply;
+}
+
+/* Figures inside an answer option. A line of maths reads like text; a graph,
+   table or diagram gets real room. The kind is decided per image from its
+   shape when it loads (see Figure in UniversalRenderer). Until then it is
+   treated as text so nothing jumps from huge to small. */
+.option-figure-scale img,
+.option-figure-scale img[data-figure="inline"] {
+  max-height: 2.4em !important;
+  max-width: 100% !important;
   width: auto !important;
   margin: 0 !important;
   vertical-align: middle;
+}
+.option-figure-scale img[data-figure="block"] {
+  display: block;
+  max-height: min(320px, 45vh) !important;
+  max-width: min(520px, 100%) !important;
+  margin: 0.25rem 0 !important;
 }
 
 /* Named handle for the ghost scrollbar. The rules above already apply globally

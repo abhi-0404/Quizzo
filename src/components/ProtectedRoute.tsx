@@ -1,6 +1,6 @@
 import { Navigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
-import { Loader2 } from "lucide-react";
+import { QuizzoLoader } from "@/components/QuizzoLoader";
 
 /**
  * Route guard.
@@ -14,22 +14,24 @@ import { Loader2 } from "lucide-react";
 export function ProtectedRoute({
   children,
   requireAdmin = false,
+  requireReviewer = false,
 }: {
   children: React.ReactNode;
   requireAdmin?: boolean;
+  /** Contributor portal: a contributor or an admin may enter. */
+  requireReviewer?: boolean;
 }) {
-  const { user, loading, isAdmin } = useAuth();
+  const { user, loading, isAdmin, isContributor, roleLoading } = useAuth();
 
-  if (loading) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-background">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
-      </div>
-    );
+  // Roles resolve a moment after the session does. Deciding before then would
+  // bounce a real admin or contributor to the home page on every refresh.
+  if (loading || ((requireAdmin || requireReviewer) && !!user && roleLoading)) {
+    return <QuizzoLoader fullscreen />;
   }
 
   if (!user) return <Navigate to="/auth" replace />;
   if (requireAdmin && !isAdmin) return <Navigate to="/" replace />;
+  if (requireReviewer && !(isAdmin || isContributor)) return <Navigate to="/" replace />;
 
   return <>{children}</>;
 }

@@ -12,6 +12,8 @@ interface AuthContextType {
   loading: boolean;
   /** True when the signed-in user holds the `admin` role in `user_roles`. */
   isAdmin: boolean;
+  /** True when the signed-in user holds the `contributor` role (reviewer). Admins are not implied. */
+  isContributor: boolean;
   /** True until the admin role check has resolved (separate from session loading). */
   roleLoading: boolean;
   signOut: () => Promise<void>;
@@ -26,6 +28,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [isContributor, setIsContributor] = useState(false);
   const [roleLoading, setRoleLoading] = useState(true);
 
   const fetchProfile = async (userId: string) => {
@@ -46,11 +49,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
    */
   const fetchRole = async (userId: string) => {
     setRoleLoading(true);
-    const { data, error } = await supabase.rpc("has_role", {
-      _user_id: userId,
-      _role: "admin",
-    });
-    setIsAdmin(!error && data === true);
+    const [admin, contributor] = await Promise.all([
+      supabase.rpc("has_role", { _user_id: userId, _role: "admin" }),
+      supabase.rpc("has_role", { _user_id: userId, _role: "contributor" }),
+    ]);
+    setIsAdmin(!admin.error && admin.data === true);
+    setIsContributor(!contributor.error && contributor.data === true);
     setRoleLoading(false);
   };
 
@@ -69,6 +73,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         } else {
           setProfile(null);
           setIsAdmin(false);
+          setIsContributor(false);
           setRoleLoading(false);
         }
         setLoading(false);
@@ -100,7 +105,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   return (
-    <AuthContext.Provider value={{ user, session, profile, loading, isAdmin, roleLoading, signOut, refreshProfile }}>
+    <AuthContext.Provider value={{ user, session, profile, loading, isAdmin, isContributor, roleLoading, signOut, refreshProfile }}>
       {children}
     </AuthContext.Provider>
   );

@@ -1,19 +1,32 @@
 import { Link } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
-import { UserCircle } from "lucide-react";
+import { LayoutDashboard, UserCircle } from "lucide-react";
 
 export function NavAuthArea() {
-  const { user } = useAuth();
+  const { user, isAdmin, isContributor } = useAuth();
 
   if (user) {
+    const portal = isAdmin ? "/admin/overview" : isContributor ? "/contributor/overview" : null;
     return (
-      <Link
-        to="/profile"
-        title="Profile"
-        className="h-8 w-8 flex items-center justify-center text-foreground/70 hover:text-foreground transition-colors"
-      >
-        <UserCircle className="h-5 w-5" />
-      </Link>
+      <div className="flex items-center">
+        {portal && (
+          <Link
+            to={portal}
+            title={isAdmin ? "Admin" : "Contributor portal"}
+            aria-label={isAdmin ? "Admin" : "Contributor portal"}
+            className="h-8 w-8 flex items-center justify-center text-foreground/70 hover:text-foreground transition-colors"
+          >
+            <LayoutDashboard className="h-[18px] w-[18px]" />
+          </Link>
+        )}
+        <Link
+          to="/profile"
+          title="Profile"
+          className="h-8 w-8 flex items-center justify-center text-foreground/70 hover:text-foreground transition-colors"
+        >
+          <UserCircle className="h-5 w-5" />
+        </Link>
+      </div>
     );
   }
 

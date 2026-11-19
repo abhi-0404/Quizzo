@@ -21,19 +21,19 @@ import { cn } from "@/lib/utils";
 function initialsFrom(name: string): string {
   const parts = name.trim().split(/\s+/).filter(Boolean);
 
-  if (parts.length === 0) return "AK";
+  if (parts.length === 0) return "?";
 
   const letters =
     (parts[0][0] ?? "") +
     (parts.length > 1 ? parts[parts.length - 1][0] ?? "" : "");
 
-  return letters.toUpperCase() || "AK";
+  return letters.toUpperCase() || "?";
 }
 
 export default function Profile() {
   const { theme, setTheme } = useTheme();
   const navigate = useNavigate();
-  const { user, profile, signOut, refreshProfile } = useAuth();
+  const { user, profile, loading: authLoading, signOut, refreshProfile } = useAuth();
 
   const { data: attempts = [], isLoading: attemptsLoading } = useQuery({
     queryKey: ["attempts", user?.id],
@@ -43,22 +43,11 @@ export default function Profile() {
 
   /* ───────────────── Profile State ───────────────── */
 
-  const [fullName, setFullName] = useState(
-    profile?.full_name || "Abhishek Kumar"
-  );
-
-  const [academicTrack, setAcademicTrack] = useState(
-    "BS in Data Science and Applications"
-  );
-
+  const [fullName, setFullName] = useState(profile?.full_name ?? "");
+  const [academicTrack, setAcademicTrack] = useState(profile?.academic_track ?? "");
   const [savingProfile, setSavingProfile] = useState(false);
-
-  const [initialFullName, setInitialFullName] = useState(
-    profile?.full_name || "Abhishek Kumar"
-  );
-
-  const initialAcademicTrack =
-    "BS in Data Science and Applications";
+  const [initialFullName, setInitialFullName] = useState(profile?.full_name ?? "");
+  const [initialAcademicTrack, setInitialAcademicTrack] = useState(profile?.academic_track ?? "");
 
   /* ───────────────── Tab State ───────────────── */
 
@@ -68,24 +57,28 @@ export default function Profile() {
 
   /* ───────────────── Authentication Redirect ───────────────── */
 
+  // Wait for the session to resolve: on a refresh `user` is null for a moment,
+  // and redirecting then would bounce every signed-in student to the home page.
   useEffect(() => {
-    if (!user) {
+    if (!authLoading && !user) {
       navigate("/", { replace: true });
     }
-  }, [user, navigate]);
+  }, [user, authLoading, navigate]);
 
   /* ───────────────── Sync Profile ───────────────── */
 
   useEffect(() => {
-    if (profile?.full_name) {
-      setFullName(profile.full_name);
-      setInitialFullName(profile.full_name);
+    if (profile) {
+      setFullName(profile.full_name ?? "");
+      setInitialFullName(profile.full_name ?? "");
+      setAcademicTrack(profile.academic_track ?? "");
+      setInitialAcademicTrack(profile.academic_track ?? "");
     }
-  }, [profile?.full_name]);
+  }, [profile]);
 
   /* ───────────────── Derived Values ───────────────── */
 
-  const email = user?.email || "abhishek@example.com";
+  const email = user?.email ?? "";
 
   const initials = useMemo(
     () => initialsFrom(fullName),
@@ -107,7 +100,8 @@ export default function Profile() {
       const { error } = await supabase
         .from("profiles")
         .update({
-          full_name: fullName,
+          full_name: fullName.trim(),
+          academic_track: academicTrack || null,
         })
         .eq("user_id", user.id);
 
@@ -116,11 +110,12 @@ export default function Profile() {
       await refreshProfile();
 
       setInitialFullName(fullName);
+      setInitialAcademicTrack(academicTrack);
 
       toast.success("Profile updated successfully");
-    } catch (err: any) {
+    } catch (err) {
       toast.error(
-        err?.message ?? "Could not update profile"
+        (err instanceof Error ? err.message : undefined) ?? "Could not update profile"
       );
     } finally {
       setSavingProfile(false);
@@ -137,9 +132,9 @@ export default function Profile() {
 
       toast.success("Logged out");
       navigate("/", { replace: true });
-    } catch (err: any) {
+    } catch (err) {
       toast.error(
-        err?.message ?? "Could not log out"
+        (err instanceof Error ? err.message : undefined) ?? "Could not log out"
       );
     }
   };
@@ -147,21 +142,21 @@ export default function Profile() {
   /* ───────────────── Shared Styles ───────────────── */
 
   const inputClass =
-    "w-full h-9 rounded-md border border-gray-300 dark:border-gray-800 bg-white dark:bg-[#16161D] px-3 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-500 outline-none focus:border-gray-400 dark:focus:border-gray-600 transition-colors";
+    "w-full h-9 rounded-md border border-input bg-card px-3 text-sm text-foreground placeholder:text-muted-foreground outline-none focus:border-ring transition-colors";
 
   const labelClass =
-    "block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1.5";
+    "block text-xs font-medium text-muted-foreground mb-1.5";
 
   if (!user) return null;
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-[#0B0B0F] text-gray-900 dark:text-white">
+    <div className="min-h-screen bg-background text-foreground">
 
       {/* ═══════════════════════════════════════════════════════
           TOP NAVIGATION
       ═══════════════════════════════════════════════════════ */}
 
-      <nav className="fixed top-0 z-50 w-full bg-white dark:bg-[#0B0B0F] border-b border-gray-200 dark:border-gray-800 px-6">
+      <nav className="fixed top-0 z-50 w-full bg-background border-b border-border px-6">
 
         <div className="mx-auto flex h-[56px] max-w-[1200px] items-center justify-between">
 
@@ -188,7 +183,7 @@ export default function Profile() {
                     : "dark"
                 )
               }
-              className="relative h-8 w-8 flex items-center justify-center text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white transition-colors"
+              className="relative h-8 w-8 flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors"
               title="Toggle theme"
               aria-label="Toggle theme"
             >
@@ -219,16 +214,16 @@ export default function Profile() {
 
             <Link
               to="/"
-              className="text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white transition-colors"
+              className="text-muted-foreground hover:text-foreground transition-colors"
             >
               Home
             </Link>
 
-            <span className="text-gray-300 dark:text-gray-700">
+            <span className="text-muted-foreground/50">
               /
             </span>
 
-            <span className="font-medium text-gray-900 dark:text-white">
+            <span className="font-medium text-foreground">
               Profile
             </span>
 
@@ -240,11 +235,11 @@ export default function Profile() {
 
           <div className="mb-8">
 
-            <h1 className="text-2xl font-semibold tracking-tight text-gray-900 dark:text-white">
+            <h1 className="text-2xl font-semibold tracking-tight text-foreground">
               Profile
             </h1>
 
-            <p className="mt-1.5 text-sm text-gray-500 dark:text-gray-400">
+            <p className="mt-1.5 text-sm text-muted-foreground">
               Manage your account and view your practice history.
             </p>
 
@@ -254,7 +249,7 @@ export default function Profile() {
               TABS
           ═══════════════════════════════════════════════════════ */}
 
-          <div className="border-b border-gray-200 dark:border-gray-800 mb-6">
+          <div className="border-b border-border mb-6">
 
             <div className="flex items-center gap-6">
 
@@ -264,14 +259,14 @@ export default function Profile() {
                 className={cn(
                   "relative pb-3 text-sm font-medium transition-colors",
                   activeTab === "account"
-                    ? "text-gray-900 dark:text-white"
-                    : "text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white"
+                    ? "text-foreground"
+                    : "text-muted-foreground hover:text-foreground"
                 )}
               >
                 Account Settings
 
                 {activeTab === "account" && (
-                  <span className="absolute left-0 right-0 -bottom-px h-px bg-gray-900 dark:bg-white" />
+                  <span className="absolute left-0 right-0 -bottom-px h-px bg-primary" />
                 )}
               </button>
 
@@ -281,14 +276,14 @@ export default function Profile() {
                 className={cn(
                   "relative pb-3 text-sm font-medium transition-colors",
                   activeTab === "history"
-                    ? "text-gray-900 dark:text-white"
-                    : "text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white"
+                    ? "text-foreground"
+                    : "text-muted-foreground hover:text-foreground"
                 )}
               >
                 Practice History
 
                 {activeTab === "history" && (
-                  <span className="absolute left-0 right-0 -bottom-px h-px bg-gray-900 dark:bg-white" />
+                  <span className="absolute left-0 right-0 -bottom-px h-px bg-primary" />
                 )}
               </button>
 
@@ -304,15 +299,15 @@ export default function Profile() {
 
               {/* ───────── Profile Information Card ───────── */}
 
-              <section className="rounded-lg border border-gray-200 dark:border-gray-800 bg-transparent p-6">
+              <section className="rounded-lg border border-border bg-transparent p-6">
 
                 <div className="mb-7">
 
-                  <h2 className="text-base font-semibold text-gray-900 dark:text-white">
+                  <h2 className="text-base font-semibold text-foreground">
                     Profile Information
                   </h2>
 
-                  <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                  <p className="mt-1 text-xs text-muted-foreground">
                     Manage your basic profile information.
                   </p>
 
@@ -321,19 +316,19 @@ export default function Profile() {
                 {/* Avatar + Account */}
                 <div className="flex items-center gap-4 mb-8">
 
-                  <div className="h-14 w-14 shrink-0 rounded-full bg-gray-700 flex items-center justify-center text-lg font-semibold text-white">
+                  <div className="h-14 w-14 shrink-0 rounded-full bg-primary flex items-center justify-center text-lg font-semibold text-primary-foreground">
                     {initials}
                   </div>
 
                   <div className="min-w-0">
 
-                    <p className="text-base font-semibold text-gray-900 dark:text-white truncate">
+                    <p className="text-base font-semibold text-foreground truncate">
                       {fullName}
                     </p>
 
                     <div className="flex flex-wrap items-center gap-2 mt-1">
 
-                      <p className="text-sm text-gray-500 dark:text-gray-400 truncate">
+                      <p className="text-sm text-muted-foreground truncate">
                         {email}
                       </p>
 
@@ -394,6 +389,8 @@ export default function Profile() {
                         )}
                       >
 
+                        <option value="">Select your programme</option>
+
                         <option>
                           BS in Data Science and Applications
                         </option>
@@ -413,7 +410,7 @@ export default function Profile() {
                       </select>
 
                       <ChevronDown
-                        className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 dark:text-gray-500"
+                        className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground"
                       />
 
                     </div>
@@ -434,8 +431,8 @@ export default function Profile() {
                     className={cn(
                       "rounded-md border text-sm font-medium px-4 py-2 transition-colors",
                       hasProfileChanges
-                        ? "border-gray-300 dark:border-gray-700 bg-transparent text-gray-900 dark:text-white hover:bg-gray-100 dark:hover:bg-[#16161D]"
-                        : "border-gray-200 dark:border-gray-800 bg-gray-100 dark:bg-[#18181D] text-gray-400 dark:text-gray-600 cursor-not-allowed"
+                        ? "border-input bg-transparent text-foreground hover:bg-secondary"
+                        : "border-border bg-secondary text-muted-foreground cursor-not-allowed"
                     )}
                   >
                     {savingProfile
@@ -449,15 +446,15 @@ export default function Profile() {
 
               {/* ───────── Session Card ───────── */}
 
-              <section className="rounded-lg border border-gray-200 dark:border-gray-800 bg-transparent p-6">
+              <section className="rounded-lg border border-border bg-transparent p-6">
 
                 <div className="mb-5">
 
-                  <h2 className="text-base font-semibold text-gray-900 dark:text-white">
+                  <h2 className="text-base font-semibold text-foreground">
                     Session
                   </h2>
 
-                  <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                  <p className="mt-1 text-xs text-muted-foreground">
                     Manage your current Quizzo session.
                   </p>
 
@@ -465,7 +462,7 @@ export default function Profile() {
 
                 <button
                   onClick={handleLogout}
-                  className="inline-flex items-center gap-2 rounded-md border border-red-200 dark:border-red-900 bg-red-50 dark:bg-[#1A0F0F] text-red-600 dark:text-red-500 hover:bg-red-100 dark:hover:bg-[#2A1111] text-sm font-medium px-4 py-2 transition-colors"
+                  className="inline-flex items-center gap-2 rounded-md border border-destructive/30 bg-destructive/10 text-destructive hover:bg-destructive/20 text-sm font-medium px-4 py-2 transition-colors"
                 >
                   <LogOut className="h-4 w-4" />
                   Log Out
@@ -481,16 +478,16 @@ export default function Profile() {
           ═══════════════════════════════════════════════════════ */}
 
           {activeTab === "history" && (
-            <section className="rounded-lg border border-gray-200 dark:border-gray-800 bg-transparent p-6">
+            <section className="rounded-lg border border-border bg-transparent p-6">
 
               {/* History Header */}
               <div className="mb-7">
 
-                <h2 className="text-base font-semibold text-gray-900 dark:text-white">
+                <h2 className="text-base font-semibold text-foreground">
                   Practice History
                 </h2>
 
-                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                <p className="mt-1 text-xs text-muted-foreground">
                   Review your previous PYQ practice attempts and results.
                 </p>
 
@@ -500,7 +497,7 @@ export default function Profile() {
               {attemptsLoading && (
                 <div className="py-12 text-center">
 
-                  <p className="text-sm text-gray-500 dark:text-gray-400">
+                  <p className="text-sm text-muted-foreground">
                     Loading your history…
                   </p>
 
@@ -511,13 +508,13 @@ export default function Profile() {
               {!attemptsLoading && attempts.length === 0 && (
                 <div className="py-12 text-center">
 
-                  <p className="text-sm text-gray-500 dark:text-gray-400 opacity-80">
+                  <p className="text-sm text-muted-foreground opacity-80">
                     No attempts yet — sit a paper and it will show up here.
                   </p>
 
                   <Link
                     to="/"
-                    className="inline-flex items-center justify-center mt-5 rounded-md border border-gray-300 dark:border-gray-700 bg-transparent hover:bg-gray-100 dark:hover:bg-[#16161D] text-gray-900 dark:text-white text-sm font-medium px-5 py-2.5 transition-colors"
+                    className="inline-flex items-center justify-center mt-5 rounded-md border border-input bg-transparent hover:bg-secondary text-foreground text-sm font-medium px-5 py-2.5 transition-colors"
                   >
                     Browse Papers
                   </Link>
@@ -534,25 +531,25 @@ export default function Profile() {
                     {/* Table Header */}
                     <thead>
 
-                      <tr className="border-b border-gray-200 dark:border-gray-800">
+                      <tr className="border-b border-border">
 
-                        <th className="px-4 py-3 text-[11px] font-medium uppercase tracking-[0.08em] text-gray-500 dark:text-gray-400">
+                        <th className="px-4 py-3 text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
                           Course
                         </th>
 
-                        <th className="px-4 py-3 text-[11px] font-medium uppercase tracking-[0.08em] text-gray-500 dark:text-gray-400">
+                        <th className="px-4 py-3 text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
                           Exam Type
                         </th>
 
-                        <th className="px-4 py-3 text-[11px] font-medium uppercase tracking-[0.08em] text-gray-500 dark:text-gray-400">
+                        <th className="px-4 py-3 text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
                           Date
                         </th>
 
-                        <th className="px-4 py-3 text-[11px] font-medium uppercase tracking-[0.08em] text-gray-500 dark:text-gray-400 text-right">
+                        <th className="px-4 py-3 text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground text-right">
                           Score
                         </th>
 
-                        <th className="px-4 py-3 text-[11px] font-medium uppercase tracking-[0.08em] text-gray-500 dark:text-gray-400 text-right">
+                        <th className="px-4 py-3 text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground text-right">
                           Action
                         </th>
 
@@ -566,13 +563,13 @@ export default function Profile() {
                       {attempts.map((attempt) => (
                         <tr
                           key={attempt.id}
-                          className="border-b border-gray-200 dark:border-gray-800 last:border-b-0 hover:bg-gray-50 dark:hover:bg-white/[0.02] transition-colors"
+                          className="border-b border-border last:border-b-0 hover:bg-secondary/50 transition-colors"
                         >
 
                           {/* Course */}
                           <td className="px-4 py-4">
 
-                            <p className="text-sm font-medium text-gray-900 dark:text-white">
+                            <p className="text-sm font-medium text-foreground">
                               {attempt.courseName}
                             </p>
 
@@ -581,7 +578,7 @@ export default function Profile() {
                           {/* Exam Type */}
                           <td className="px-4 py-4">
 
-                            <span className="text-sm text-gray-500 dark:text-gray-400">
+                            <span className="text-sm text-muted-foreground">
                               {examTypeLabel(
                                 attempt.examType
                               )}
@@ -592,7 +589,7 @@ export default function Profile() {
                           {/* Date */}
                           <td className="px-4 py-4">
 
-                            <span className="text-sm text-gray-500 dark:text-gray-400">
+                            <span className="text-sm text-muted-foreground">
                               {formatDate(
                                 attempt.examDate
                               )}
@@ -603,7 +600,7 @@ export default function Profile() {
                           {/* Score */}
                           <td className="px-4 py-4 text-right">
 
-                            <span className="text-sm font-semibold text-gray-900 dark:text-white tabular-nums">
+                            <span className="text-sm font-semibold text-foreground tabular-nums">
                               {attempt.score}/
                               {attempt.totalMarks}
                             </span>
@@ -615,7 +612,7 @@ export default function Profile() {
 
                             <Link
                               to={`/data-science-and-applications/${attempt.courseSlug}/report?attempt=${attempt.id}`}
-                              className="inline-flex items-center gap-1.5 rounded-md border border-gray-200 dark:border-gray-800 bg-transparent hover:bg-gray-100 dark:hover:bg-[#16161D] text-gray-900 dark:text-white text-xs font-medium px-3 py-1.5 transition-colors"
+                              className="inline-flex items-center gap-1.5 rounded-md border border-border bg-transparent hover:bg-secondary text-foreground text-xs font-medium px-3 py-1.5 transition-colors"
                             >
                               <FileText className="h-3.5 w-3.5" />
                               View Report

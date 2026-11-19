@@ -2,36 +2,46 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { lazy, Suspense } from "react";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { QuizzoLoader } from "@/components/QuizzoLoader";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { ThemeProvider } from "next-themes";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { PendingAttemptSync } from "@/components/PendingAttemptSync";
 import { useGhostScrollbar } from "@/hooks/use-ghost-scrollbar";
-import Auth from "./pages/Auth";
-import Index from "./pages/Index";
-import Overview from "./pages/Dashboard";
-import CreateContent from "./pages/BugCreate";
-import QuestionBank from "./pages/BugList";
-import Schedule from "./pages/Schedule";
-import Performance from "./pages/Analytics";
-import Settings from "./pages/Settings";
-import NotFound from "./pages/NotFound";
-import Degree from "./pages/Degree";
-import CourseDetail from "./pages/CourseDetail";
-import Profile from "./pages/Profile";
-import Exam from "./pages/Exam";
-import ExamReport from "./pages/ExamReport";
-import DevPyqLab from "./pages/DevPyqLab";
-import DevPyqImportLab from "./pages/DevPyqImportLab";
-import AuthCallback from "./pages/AuthCallback";
+const Auth = lazy(() => import("./pages/Auth"));
+const Index = lazy(() => import("./pages/Index"));
+const Overview = lazy(() => import("./pages/Dashboard"));
+const CreateContent = lazy(() => import("./pages/BugCreate"));
+const QuestionBank = lazy(() => import("./pages/BugList"));
+const Schedule = lazy(() => import("./pages/Schedule"));
+const Performance = lazy(() => import("./pages/Analytics"));
+const Settings = lazy(() => import("./pages/Settings"));
+const NotFound = lazy(() => import("./pages/NotFound"));
+const Degree = lazy(() => import("./pages/Degree"));
+const CourseDetail = lazy(() => import("./pages/CourseDetail"));
+const Profile = lazy(() => import("./pages/Profile"));
+const Exam = lazy(() => import("./pages/Exam"));
+const ExamReport = lazy(() => import("./pages/ExamReport"));
+const DevPyqLab = lazy(() => import("./pages/DevPyqLab"));
+const DevPyqImportLab = lazy(() => import("./pages/DevPyqImportLab"));
+const AuthCallback = lazy(() => import("./pages/AuthCallback"));
 
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: { staleTime: 30_000, retry: 1, refetchOnWindowFocus: false },
+  },
+});
+
+const PageFallback = () => <QuizzoLoader fullscreen />;
 
 const App = () => {
   useGhostScrollbar();
   return (
+  <ErrorBoundary>
   <ThemeProvider attribute="class" defaultTheme="dark" enableSystem>
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
@@ -40,6 +50,7 @@ const App = () => {
         <BrowserRouter>
           <AuthProvider>
             <PendingAttemptSync />
+            <Suspense fallback={<PageFallback />}>
             <Routes>
               <Route path="/auth" element={<Auth />} />
               <Route path="/auth/callback" element={<AuthCallback />} />
@@ -49,6 +60,7 @@ const App = () => {
               <Route path="/admin/bank" element={<ProtectedRoute requireAdmin><QuestionBank /></ProtectedRoute>} />
               <Route path="/admin/schedule" element={<ProtectedRoute requireAdmin><Schedule /></ProtectedRoute>} />
               <Route path="/admin/performance" element={<ProtectedRoute requireAdmin><Performance /></ProtectedRoute>} />
+
               <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
               <Route path="/profile" element={<Profile />} />
               <Route path="/:slug/:courseSlug/exam" element={<Exam />} />
@@ -63,11 +75,13 @@ const App = () => {
 
               <Route path="*" element={<NotFound />} />
             </Routes>
+            </Suspense>
           </AuthProvider>
         </BrowserRouter>
       </TooltipProvider>
     </QueryClientProvider>
   </ThemeProvider>
+  </ErrorBoundary>
   );
 };
 

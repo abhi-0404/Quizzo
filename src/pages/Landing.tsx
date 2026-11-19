@@ -1,16 +1,15 @@
 import { Link } from "react-router-dom";
 import { ArrowRight, Moon, Sun } from "lucide-react";
-import { Logo3D } from "@/components/Logo3D";
-import testimonialAvatarAsset from "@/assets/testimonial-avatar.jpg.asset.json";
 import { useTheme } from "next-themes";
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 
 import { StackedLogo } from "@/components/StackedLogo";
 import { NavAuthArea } from "@/components/NavAuthArea";
 
+// three.js is ~800 KB; load it after first paint instead of blocking the landing page.
+const Logo3D = lazy(() => import("@/components/Logo3D").then((m) => ({ default: m.Logo3D })));
+
 /** Apply slate accent on mount */
-const SLATE_HSL = "215 16% 47%";
-const SLATE_DARK = "215 14% 55%";
 
 const LOGO_VARIANT = 1;
 const CUBE_SIZE = 840;
@@ -32,21 +31,10 @@ const Landing = () => {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  const isDark = theme === "dark";
-  const diagonalLineColor = isDark ? "hsl(240 4% 26%" : "hsl(240 4% 80%";
-
-  useEffect(() => {
-    const root = document.documentElement;
-    const isDark = theme === "dark";
-    const hsl = isDark ? SLATE_DARK : SLATE_HSL;
-    root.style.setProperty("--primary", hsl);
-    root.style.setProperty("--ring", hsl);
-    root.style.setProperty("--sidebar-primary", hsl);
-    root.style.setProperty("--sidebar-ring", hsl);
-  }, [theme]);
+  const diagonalLineColor = "hsl(var(--border)";
 
   return (
-    <div className="min-h-screen bg-[#f3f4f6] dark:bg-zinc-950 text-foreground overflow-x-hidden">
+    <div className="min-h-screen bg-background text-foreground overflow-x-hidden">
       {/* Nav */}
       <nav className="fixed top-0 z-50 w-full bg-background border-b border-border px-6">
         <div className="mx-auto flex h-[56px] max-w-[1200px] items-center justify-between">
@@ -76,7 +64,7 @@ const Landing = () => {
           <div className="pt-[52px] pb-16 relative flex">
             {/* Left column — text */}
             <div className="relative z-[3] flex-1 min-w-0 max-w-[540px]">
-              <h1 className="text-[clamp(2rem,4vw,3.2rem)] font-[500] leading-[1.08] tracking-[-0.04em] max-w-[540px] bg-gradient-to-r from-zinc-600 via-zinc-950 to-zinc-600 bg-clip-text text-transparent dark:from-zinc-400 dark:via-white dark:to-zinc-400">
+              <h1 className="text-[clamp(2rem,4vw,3.2rem)] font-[500] leading-[1.08] tracking-[-0.04em] max-w-[540px] bg-gradient-to-r from-muted-foreground via-foreground to-muted-foreground bg-clip-text text-transparent">
                 Ace your IIT Madras exams with past papers
               </h1>
               <p className="mt-6 text-base leading-relaxed text-muted-foreground max-w-[420px]">
@@ -87,7 +75,9 @@ const Landing = () => {
             {/* Right column — 3D cube */}
             <div className="hidden md:block flex-1 relative z-[1] pointer-events-none" style={{ minWidth: 0 }}>
               <div className="absolute top-1/2 right-0 -translate-y-1/2" style={{ width: CUBE_SIZE, height: CUBE_SIZE, transform: `translate(${-CUBE_OFFSET_X}px, calc(-50% + ${CUBE_OFFSET_Y}px))` }}>
-                <Logo3D variant={LOGO_VARIANT} size={CUBE_SIZE} zoom={cubeZoom} bgHex={theme === "dark" ? "#0e0e10" : "#f3f4f6"} lineHex={theme === "dark" ? "#58585e" : "#c0c0c8"} />
+                <Suspense fallback={null}>
+                  <Logo3D variant={LOGO_VARIANT} size={CUBE_SIZE} zoom={cubeZoom} bgHex={theme === "dark" ? "#0e0e10" : "#f1f2f3"} lineHex={theme === "dark" ? "#58585e" : "#c0c0c8"} />
+                </Suspense>
               </div>
             </div>
           </div>
@@ -150,13 +140,13 @@ const Landing = () => {
                   </div>
                   <div className="flex-1">
                     {[
-                      { priority: "bg-destructive", id: "QZ-2041", title: "w-[180px]", status: "bg-warning" },
-                      { priority: "bg-destructive", id: "QZ-2039", title: "w-[220px]", status: "bg-destructive" },
-                      { priority: "bg-warning", id: "QZ-2038", title: "w-[160px]", status: "bg-primary" },
-                      { priority: "bg-primary", id: "QZ-2036", title: "w-[200px]", status: "bg-success" },
-                      { priority: "bg-muted-foreground/30", id: "QZ-2034", title: "w-[140px]", status: "bg-primary" },
-                      { priority: "bg-warning", id: "QZ-2031", title: "w-[190px]", status: "bg-warning" },
-                      { priority: "bg-primary", id: "QZ-2029", title: "w-[170px]", status: "bg-success" },
+                      { priority: "bg-destructive", title: "w-[180px]", status: "bg-warning" },
+                      { priority: "bg-destructive", title: "w-[220px]", status: "bg-destructive" },
+                      { priority: "bg-warning", title: "w-[160px]", status: "bg-primary" },
+                      { priority: "bg-primary", title: "w-[200px]", status: "bg-success" },
+                      { priority: "bg-muted-foreground/30", title: "w-[140px]", status: "bg-primary" },
+                      { priority: "bg-warning", title: "w-[190px]", status: "bg-warning" },
+                      { priority: "bg-primary", title: "w-[170px]", status: "bg-success" },
                     ].map((row, i) => (
                       <div key={i} className={`relative flex items-center gap-3 px-4 h-9 border-b border-border transition-colors`}>
                         {i === 1 && (
@@ -167,7 +157,6 @@ const Landing = () => {
                         <div className="h-3.5 w-3.5 rounded border border-border flex items-center justify-center shrink-0">
                           <div className={`h-1.5 w-1.5 rounded-sm ${row.priority}`} />
                         </div>
-                        <span className="text-[11px] text-muted-foreground font-mono shrink-0">{row.id}</span>
                         <div className={`h-1.5 ${row.title} rounded-full bg-foreground/15`} />
                         <div className="ml-auto flex items-center gap-2">
                           <div className={`h-2 w-2 rounded-full ${row.status}`} />
@@ -236,7 +225,7 @@ const Landing = () => {
           <p className="text-[13px] uppercase tracking-[0.15em] text-muted-foreground mb-4">
             Built for students
           </p>
-          <h2 className="text-[clamp(1.8rem,3vw,2.5rem)] font-[500] tracking-[-0.03em] max-w-[500px] leading-[1.15] bg-gradient-to-r from-zinc-600 via-zinc-950 to-zinc-600 bg-clip-text text-transparent dark:from-zinc-400 dark:via-white dark:to-zinc-400">
+          <h2 className="text-[clamp(1.8rem,3vw,2.5rem)] font-[500] tracking-[-0.03em] max-w-[500px] leading-[1.15] bg-gradient-to-r from-muted-foreground via-foreground to-muted-foreground bg-clip-text text-transparent">
             Less guessing.<br />More scoring.
           </h2>
 
@@ -302,7 +291,7 @@ const Landing = () => {
                       )}
                     </div>
                   </div>
-                  <h3 className="text-[15px] font-medium mb-2 bg-gradient-to-r from-zinc-600 via-zinc-950 to-zinc-600 bg-clip-text text-transparent dark:from-zinc-400 dark:via-white dark:to-zinc-400">{feature.title}</h3>
+                  <h3 className="text-[15px] font-medium mb-2 bg-gradient-to-r from-muted-foreground via-foreground to-muted-foreground bg-clip-text text-transparent">{feature.title}</h3>
                   <p className="text-[13px] leading-[1.6] text-muted-foreground">{feature.desc}</p>
                 </div>
               ))}
@@ -310,49 +299,13 @@ const Landing = () => {
           </div>
         </div>
       </section>
-
-      {/* Full-width divider */}
-      <div className="relative z-10 w-full border-t border-border" />
-
-      {/* Social proof */}
-      <section className="relative z-10 py-24 px-6 overflow-hidden">
-        {/* Angular line shading background */}
-        <div
-          className="absolute inset-0 pointer-events-none"
-          style={{
-            backgroundImage: `repeating-linear-gradient(
-              -45deg,
-              ${diagonalLineColor} / 0.55) 0px,
-              ${diagonalLineColor} / 0.55) 1px,
-              transparent 1px,
-              transparent 8px
-            )`,
-            backgroundSize: "100% 100%",
-          }}
-        />
-        <div className="mx-auto max-w-[1200px] relative">
-          <div className="border border-border bg-card p-10 max-w-[720px] mx-auto">
-            <blockquote className="text-[20px] font-[400] leading-[1.5] tracking-[-0.01em] text-foreground">
-              "I cleared Statistics I on my first attempt after two weeks on QUIZZO. The past papers are spot-on and the practice mode makes it impossible to lose track of where you're weak."
-            </blockquote>
-            <div className="mt-6 flex items-center gap-3">
-              <img src={testimonialAvatarAsset.url} alt="Priya Nair" className="h-8 w-8 rounded-full object-cover" />
-              <div>
-                <span className="text-[13px] font-medium text-foreground">Priya Nair</span>
-                <span className="text-[13px] text-muted-foreground ml-2">BS Data Science, Semester 4</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
       {/* Full-width divider */}
       <div className="relative z-10 w-full border-t border-border" />
 
       {/* CTA */}
       <section className="relative z-10 pt-32 pb-40 px-6 overflow-hidden">
         <div className="mx-auto max-w-[1200px] text-center relative">
-          <h2 className="text-[clamp(2rem,4vw,3.2rem)] font-[500] tracking-[-0.035em] leading-[1.1] mx-auto max-w-[560px] bg-gradient-to-r from-zinc-600 via-zinc-950 to-zinc-600 bg-clip-text text-transparent dark:from-zinc-400 dark:via-white dark:to-zinc-400">
+          <h2 className="text-[clamp(2rem,4vw,3.2rem)] font-[500] tracking-[-0.035em] leading-[1.1] mx-auto max-w-[560px] bg-gradient-to-r from-muted-foreground via-foreground to-muted-foreground bg-clip-text text-transparent">
             Your next exam isn't going to prepare itself.
           </h2>
           <p className="mt-5 text-[15px] text-muted-foreground max-w-[400px] mx-auto">

@@ -7,6 +7,7 @@ import { NavAuthArea } from "@/components/NavAuthArea";
 import { useQuery } from "@tanstack/react-query";
 import { examTypeLabel, listPapersForCourse, type PaperSummary } from "@/lib/pyq-read";
 import { formatDate } from "@/data/schedule";
+import { QuizzoLoader } from "@/components/QuizzoLoader";
 import {
   Select,
   SelectContent,
@@ -242,7 +243,7 @@ function CourseDetail() {
           </div>
 
           {isLoading && (
-            <p className="mt-10 text-[13.5px] text-muted-foreground">Loading papers…</p>
+            <QuizzoLoader label="Loading papers" size={36} />
           )}
           {!isLoading && filteredPapers.length === 0 && (
             <p className="mt-10 text-[13.5px] text-muted-foreground">

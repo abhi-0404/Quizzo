@@ -3,7 +3,9 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>QUIZZO</title>
+    <title>QUIZZO: IIT Madras past-year papers, timed exams and practice</title>
+    <meta name="theme-color" content="#0e0e10" />
+    <script src="/theme-init.js"></script>
     <meta name="description" content="Practice past-year papers, take timed exams, and track your progress.">
     <meta property="og:type" content="website" />
     <meta property="og:title" content="QUIZZO">
@@ -11,11 +13,53 @@
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content="QUIZZO">
     <meta name="twitter:description" content="Practice past-year papers, take timed exams, and track your progress.">
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600;700&display=swap" />
+    <style>
+      /* QUIZZO loader. Lives here (not in the CSS bundle) so it animates on the
+         very first paint, before any JavaScript arrives. Used by the boot
+         loader below and by <QuizzoMark> in the app. */
+      .qz-bar { transform-box: fill-box; transform-origin: center;
+        animation: qz-shuffle 1.5s cubic-bezier(0.65, 0, 0.35, 1) infinite; }
+      .qz-bar-1 { --qz-dx: 1.5px; }
+      .qz-bar-2 { --qz-dx: -2px; animation-delay: 0.14s; }
+      .qz-bar-3 { --qz-dx: 2.5px; animation-delay: 0.28s; }
+      @keyframes qz-shuffle {
+        0%, 70%, 100% { transform: translateX(0) scaleX(1); opacity: 1; }
+        35% { transform: translateX(var(--qz-dx)) scaleX(0.8); opacity: 0.45; }
+      }
+      .qz-label { animation: qz-fade 1.5s ease-in-out infinite; }
+      @keyframes qz-fade { 0%, 100% { opacity: 0.55; } 50% { opacity: 1; } }
+      @media (prefers-reduced-motion: reduce) {
+        .qz-bar { animation: qz-pulse 1.6s ease-in-out infinite; }
+        .qz-bar-2 { animation-delay: 0.2s; } .qz-bar-3 { animation-delay: 0.4s; }
+        .qz-label { animation: none; }
+        @keyframes qz-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+      }
+      .qz-boot { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center;
+        justify-content: center; gap: 12px; background: hsl(220 9% 95%); color: hsl(221 39% 11%);
+        font: 500 12px/1 Geist, Inter, system-ui, sans-serif; letter-spacing: 0.18em; text-transform: uppercase; }
+      .qz-boot span { color: hsl(220 9% 46%); }
+      html.dark .qz-boot { background: hsl(240 6% 6%); color: hsl(0 0% 90%); }
+      html.dark .qz-boot span { color: hsl(0 0% 55%); }
+    </style>
     <link rel="icon" type="image/svg+xml" href="/favicon.svg">
   </head>
 
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <!-- Replaced by the app as soon as React mounts. -->
+      <div class="qz-boot" role="status" aria-live="polite">
+        <svg width="44" height="44" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+          <rect class="qz-bar qz-bar-1" x="3" y="1.5" width="10" height="3.5" rx="0.5" />
+          <rect class="qz-bar qz-bar-2" x="4.5" y="6.5" width="10" height="3.5" rx="0.5" />
+          <rect class="qz-bar qz-bar-3" x="2" y="11.5" width="10" height="3.5" rx="0.5" />
+        </svg>
+        <span class="qz-label">Loading QUIZZO</span>
+      </div>
+    </div>
+    <noscript>QUIZZO needs JavaScript to run. Please enable it and reload.</noscript>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
